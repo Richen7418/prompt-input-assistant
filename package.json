@@ -1,0 +1,64 @@
+{
+  "name": "prompt-input-assistant",
+  "productName": "中文提示词输入助手",
+  "version": "0.1.4",
+  "description": "适用于 Windows 与 macOS 的本地提示词桌面输入助手",
+  "author": "本地个人项目",
+  "private": true,
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "postinstall": "node scripts/postinstall.js",
+    "test": "node --test",
+    "check": "node scripts/static-check.js && node --test",
+    "smoke:electron": "electron . --smoke-test",
+    "smoke:app": "electron . --full-smoke-test",
+    "pack:win": "electron-builder --win dir",
+    "dist:win": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg zip"
+  },
+  "devDependencies": {
+    "electron": "43.3.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "local.prompt.inputassistant",
+    "productName": "中文提示词输入助手",
+    "asar": true,
+    "asarUnpack": [
+      "scripts/platform/**/*"
+    ],
+    "files": [
+      "src/**/*",
+      "scripts/generate-assets.js",
+      "scripts/platform/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "artifactName": "prompt-input-assistant-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    }
+  }
+}

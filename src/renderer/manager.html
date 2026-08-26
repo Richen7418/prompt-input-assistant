@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>中文提示词输入助手</title>
+  <link rel="stylesheet" href="manager.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">LOCAL PROMPT ASSISTANT</p>
+      <h1>中文提示词输入助手</h1>
+      <p class="subtitle">Windows 10/11 · macOS · ChatGPT Classic · ChatGPT</p>
+    </div>
+    <button id="new-prompt-button" class="primary-button" type="button">＋ 新增提示词</button>
+  </header>
+
+  <main>
+    <section class="status-card" aria-labelledby="status-title">
+      <div>
+        <h2 id="status-title">运行状态</h2>
+        <p id="trigger-status" class="status-line">正在检查分号触发…</p>
+        <p id="data-path" class="data-path"></p>
+      </div>
+      <label class="switch-label">
+        <input id="trigger-enabled" type="checkbox">
+        <span>启用 <kbd>;</kbd> 触发</span>
+      </label>
+    </section>
+
+    <section class="settings-card" aria-labelledby="settings-title">
+      <div class="section-title-row">
+        <div>
+          <h2 id="settings-title">候选框设置</h2>
+          <p>设置会立即用于下一次检索。</p>
+        </div>
+      </div>
+      <div class="settings-grid">
+        <label>同时显示条数
+          <input id="result-limit" type="number" min="1" max="20" inputmode="numeric">
+        </label>
+        <label>内容字号
+          <div class="number-suffix"><input id="content-font-size" type="number" min="12" max="22" inputmode="numeric"><span>px</span></div>
+        </label>
+        <label>标签字号
+          <div class="number-suffix"><input id="tag-font-size" type="number" min="9" max="16" inputmode="numeric"><span>px</span></div>
+        </label>
+        <label class="checkbox-setting"><input id="launch-at-login" type="checkbox"> 登录系统后自动启动</label>
+      </div>
+    </section>
+
+    <section class="library-section" aria-labelledby="library-title">
+      <div class="section-title-row library-heading">
+        <div>
+          <h2 id="library-title">提示词库 <span id="prompt-count" class="count-badge">0</span></h2>
+          <p>兼容现有 Chrome 扩展导出的 JSON。</p>
+        </div>
+        <div class="toolbar">
+          <button id="import-button" class="secondary-button" type="button">导入 JSON</button>
+          <button id="export-button" class="secondary-button" type="button">导出 JSON</button>
+        </div>
+      </div>
+
+      <label class="search-box">
+        <span aria-hidden="true">⌕</span>
+        <input id="search-input" type="search" placeholder="搜索标题、关键词、标签或英文别名" autocomplete="off">
+      </label>
+      <div id="prompt-list" class="prompt-list"></div>
+    </section>
+  </main>
+
+  <dialog id="prompt-dialog">
+    <form id="prompt-form" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">PROMPT</p>
+          <h2 id="dialog-title">新增提示词</h2>
+        </div>
+        <button id="dialog-close-button" class="icon-button" type="button" aria-label="关闭">×</button>
+      </div>
+      <input id="prompt-id" type="hidden">
+      <label>标题 <span>*</span>
+        <input id="title-input" type="text" maxlength="100" required autocomplete="off">
+      </label>
+      <label>提示词内容 <span>*</span>
+        <textarea id="content-input" maxlength="20000" rows="9" required></textarea>
+      </label>
+      <div class="form-grid">
+        <label>中文关键词
+          <input id="keywords-input" type="text" maxlength="500" placeholder="润色，邮件">
+        </label>
+        <label>标签
+          <input id="tags-input" type="text" maxlength="500" placeholder="工作，常用">
+        </label>
+      </div>
+      <label>英文别名
+        <input id="aliases-input" type="text" maxlength="500" placeholder="polish, email">
+      </label>
+      <div class="dialog-actions">
+        <button id="form-cancel-button" class="secondary-button" type="button">取消</button>
+        <button class="primary-button" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="../core/learning.js"></script>
+  <script src="../core/search.js"></script>
+  <script src="manager.js"></script>
+</body>
+</html>

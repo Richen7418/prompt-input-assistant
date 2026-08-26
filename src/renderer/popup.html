@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>提示词候选</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup-shell">
+    <header>
+      <div class="mode-row">
+        <span id="mode-badge" class="mode-badge">提示词检索</span>
+        <span id="target-name" class="target-name"></span>
+      </div>
+      <span id="result-count" class="result-count">0 条</span>
+    </header>
+
+    <label class="query-box">
+      <span id="query-prefix" aria-hidden="true">;</span>
+      <input id="query-input" type="text" maxlength="100" autocomplete="off" spellcheck="false" aria-label="检索提示词">
+    </label>
+
+    <section id="candidate-list" class="candidate-list" aria-label="提示词候选"></section>
+
+    <footer>
+      <span>↑ ↓ 选择</span>
+      <span>Tab 插入并继续</span>
+      <span>滚轮查看更多</span>
+      <span>空格 / Esc 关闭</span>
+    </footer>
+  </main>
+  <script src="../core/learning.js"></script>
+  <script src="../core/search.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
