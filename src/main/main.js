@@ -15,8 +15,9 @@ const {
   screen,
   Tray
 } = require("electron");
-const { restoreClipboard, snapshotClipboard } = require("./clipboard");
+const { captureSelectedText, restoreClipboard, snapshotClipboard } = require("./clipboard");
 const {
+  activateAndCopy,
   activateAndPaste,
   activateWindow,
   captureTarget,
@@ -32,8 +33,9 @@ const { ICON_BASE64 } = require("../../scripts/generate-assets");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const isFullSmokeTest = process.argv.includes("--full-smoke-test");
-const PRIMARY_TRIGGER = ";";
-const FALLBACK_TRIGGER = "CommandOrControl+;";
+const SEARCH_TRIGGER = ";";
+const QUICK_ADD_TRIGGER = "CommandOrControl+;";
+const QUICK_ADD_CONTENT_LIMIT = 20000;
 const PREDICTION_ESCAPE = "Escape";
 const PREDICTION_SPACE = "Space";
 
@@ -43,8 +45,9 @@ let managerWindow;
 let popupWindow;
 let tray;
 let currentTarget;
-let triggerStatus = { primary: false, fallback: false };
+let triggerStatus = { search: false, quickAdd: false };
 let openingPopup = false;
+let quickAddInProgress = false;
 let pendingMode = "prompt";
 let popupReady = false;
 let popupRawText = "";
@@ -200,6 +203,29 @@ async function verifyPopupKeyboardNavigation() {
   }
 }
 
+async function verifyQuickAddForm() {
+  const content = "快速收录测试正文\n第二行";
+  showManager();
+  managerWindow.webContents.send("manager:quick-add", { content, truncated: false });
+  await delay(100);
+  const result = await managerWindow.webContents.executeJavaScript(`(() => ({
+    dialogOpen: document.querySelector("#prompt-dialog").open,
+    dialogTitle: document.querySelector("#dialog-title").textContent,
+    title: document.querySelector("#title-input").value,
+    content: document.querySelector("#content-input").value,
+    titleFocused: document.activeElement === document.querySelector("#title-input")
+  }))()`);
+  await managerWindow.webContents.executeJavaScript(`document.querySelector("#prompt-dialog").close()`);
+  managerWindow.hide();
+  if (!result.dialogOpen
+    || result.dialogTitle !== "快速新增提示词"
+    || result.title !== ""
+    || result.content !== content
+    || !result.titleFocused) {
+    throw new Error(`Quick add form smoke test failed: ${JSON.stringify(result)}`);
+  }
+}
+
 function getPreloadPath() {
   return path.join(__dirname, "..", "preload.js");
 }
@@ -214,12 +240,12 @@ function focusedAssistantWindow() {
 }
 
 function unregisterTriggerShortcuts() {
-  for (const accelerator of [PRIMARY_TRIGGER, FALLBACK_TRIGGER]) {
+  for (const accelerator of [SEARCH_TRIGGER, QUICK_ADD_TRIGGER]) {
     if (globalShortcut.isRegistered(accelerator)) {
       globalShortcut.unregister(accelerator);
     }
   }
-  triggerStatus = { primary: false, fallback: false };
+  triggerStatus = { search: false, quickAdd: false };
 }
 
 function unregisterPredictionCloseShortcuts() {
@@ -294,20 +320,23 @@ function registerTriggerShortcuts() {
     || focusedAssistantWindow()
     || popupWindow?.isVisible()
     || currentTarget
-    || openingPopup) {
+    || openingPopup
+    || quickAddInProgress) {
     broadcastStatus();
     return;
   }
 
   try {
-    triggerStatus.primary = globalShortcut.register(PRIMARY_TRIGGER, () => openPopup("prompt"));
+    triggerStatus.search = globalShortcut.register(SEARCH_TRIGGER, () => openPopup("prompt"));
   } catch (error) {
     console.warn("分号快捷键注册失败：", error.message);
   }
   try {
-    triggerStatus.fallback = globalShortcut.register(FALLBACK_TRIGGER, () => openPopup("prompt"));
+    triggerStatus.quickAdd = globalShortcut.register(QUICK_ADD_TRIGGER, () => {
+      void startQuickAdd();
+    });
   } catch (error) {
-    console.warn("备用快捷键注册失败：", error.message);
+    console.warn("快速收录快捷键注册失败：", error.message);
   }
   broadcastStatus();
 }
@@ -335,6 +364,47 @@ function showManager() {
   }
   managerWindow.show();
   managerWindow.focus();
+}
+
+function showShortNotification(message) {
+  if (!Notification.isSupported()) {
+    console.warn(message);
+    return;
+  }
+  new Notification({
+    title: "中文提示词输入助手",
+    body: message,
+    silent: true
+  }).show();
+}
+
+async function startQuickAdd() {
+  if (quickAddInProgress || openingPopup || currentTarget) return false;
+  quickAddInProgress = true;
+  unregisterTriggerShortcuts();
+
+  try {
+    const target = await captureTarget();
+    const selectedText = await captureSelectedText(clipboard, () => activateAndCopy(target));
+    if (!selectedText.trim()) {
+      showShortNotification("请先选中内容");
+      return false;
+    }
+
+    const truncated = selectedText.length > QUICK_ADD_CONTENT_LIMIT;
+    const content = selectedText.slice(0, QUICK_ADD_CONTENT_LIMIT);
+    await waitForWindowLoad(managerWindow);
+    showManager();
+    managerWindow.webContents.send("manager:quick-add", { content, truncated });
+    return true;
+  } catch (error) {
+    console.warn("快速收录选中文字失败：", error.message);
+    showShortNotification("请先选中内容");
+    return false;
+  } finally {
+    quickAddInProgress = false;
+    setTimeout(registerTriggerShortcuts, 80);
+  }
 }
 
 function popupBounds() {
@@ -624,7 +694,7 @@ function updateTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "打开提示词管理", click: showManager },
     {
-      label: enabled ? "暂停分号触发" : "启用分号触发",
+      label: enabled ? "暂停快捷键" : "启用快捷键",
       click: () => {
         store.updateSettings({ triggerEnabled: !enabled });
         if (enabled) {
@@ -753,13 +823,13 @@ function registerIpcHandlers() {
 }
 
 async function runSmokeTest() {
-  let primary = false;
-  let fallback = false;
+  let search = false;
+  let quickAdd = false;
   try {
-    primary = globalShortcut.register(PRIMARY_TRIGGER, () => {});
-    fallback = globalShortcut.register(FALLBACK_TRIGGER, () => {});
+    search = globalShortcut.register(SEARCH_TRIGGER, () => {});
+    quickAdd = globalShortcut.register(QUICK_ADD_TRIGGER, () => {});
   } finally {
-    console.log(JSON.stringify({ electron: process.versions.electron, platform: process.platform, primary, fallback }));
+    console.log(JSON.stringify({ electron: process.versions.electron, platform: process.platform, search, quickAdd }));
     globalShortcut.unregisterAll();
     app.quit();
   }
@@ -798,6 +868,7 @@ async function initialize() {
       || !popupHealth.promptLearning || !popupHealth.promptSearch) {
       throw new Error(`Renderer initialization failed: ${JSON.stringify({ managerHealth, popupHealth })}`);
     }
+    await verifyQuickAddForm();
     await verifyPopupCloseShortcut("Escape", "Escape");
     await verifyPopupCloseShortcut(" ", "Space");
     await verifyPopupCompositionSafety();
@@ -815,6 +886,7 @@ async function initialize() {
       trayImageEmpty: trayImage().isEmpty(),
       promptCount: store.snapshot().prompts.length,
       rendererHealthy: true,
+      quickAddForm: true,
       predictionCloseKeys: true,
       compositionCloseSafety: true,
       candidateKeyboardScope: true,

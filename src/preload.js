@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("promptAssistant", Object.freeze({
   focusPopup: () => ipcRenderer.invoke("popup:focus"),
   updatePopupState: (state) => ipcRenderer.send("popup:state", state),
   onLibraryChanged: (callback) => subscribe("library:changed", callback),
+  onQuickAdd: (callback) => subscribe("manager:quick-add", callback),
   onPopupOpen: (callback) => subscribe("popup:open", callback),
   onManagerNotice: (callback) => subscribe("manager:notice", callback)
 }));

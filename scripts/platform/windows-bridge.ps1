@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("GetTarget", "Focus", "Paste", "Server")]
+  [ValidateSet("GetTarget", "Focus", "Copy", "Paste", "Server")]
   [string]$Action,
 
   [long]$WindowHandle = 0,
@@ -137,7 +137,7 @@ function Invoke-FocusJson([long]$TargetWindowHandle, [long]$TargetProcessId) {
   return [PSCustomObject]@{ success = [bool]$activated } | ConvertTo-Json -Compress
 }
 
-function Invoke-PasteJson([long]$TargetWindowHandle, [long]$TargetProcessId) {
+function Invoke-ControlShortcutJson([long]$TargetWindowHandle, [long]$TargetProcessId, [byte]$VirtualKey) {
   $activated = Set-TargetForeground $TargetWindowHandle $TargetProcessId
   if (-not $activated) {
     return [PSCustomObject]@{ success = $false } | ConvertTo-Json -Compress
@@ -145,11 +145,19 @@ function Invoke-PasteJson([long]$TargetWindowHandle, [long]$TargetProcessId) {
 
   $keyUp = 0x0002
   [PromptInputBridge]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
-  [PromptInputBridge]::keybd_event(0x56, 0, 0, [UIntPtr]::Zero)
-  [PromptInputBridge]::keybd_event(0x56, 0, $keyUp, [UIntPtr]::Zero)
+  [PromptInputBridge]::keybd_event($VirtualKey, 0, 0, [UIntPtr]::Zero)
+  [PromptInputBridge]::keybd_event($VirtualKey, 0, $keyUp, [UIntPtr]::Zero)
   [PromptInputBridge]::keybd_event(0x11, 0, $keyUp, [UIntPtr]::Zero)
 
   return [PSCustomObject]@{ success = $true } | ConvertTo-Json -Compress
+}
+
+function Invoke-PasteJson([long]$TargetWindowHandle, [long]$TargetProcessId) {
+  return Invoke-ControlShortcutJson $TargetWindowHandle $TargetProcessId 0x56
+}
+
+function Invoke-CopyJson([long]$TargetWindowHandle, [long]$TargetProcessId) {
+  return Invoke-ControlShortcutJson $TargetWindowHandle $TargetProcessId 0x43
 }
 
 if ($Action -eq "GetTarget") {
@@ -159,6 +167,11 @@ if ($Action -eq "GetTarget") {
 
 if ($Action -eq "Paste") {
   Invoke-PasteJson $WindowHandle $ProcessId
+  exit 0
+}
+
+if ($Action -eq "Copy") {
+  Invoke-CopyJson $WindowHandle $ProcessId
   exit 0
 }
 
@@ -189,6 +202,15 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     [long]$targetProcessId = 0
     if ($parts.Length -ge 3 -and [long]::TryParse($parts[1], [ref]$targetHandle) -and [long]::TryParse($parts[2], [ref]$targetProcessId)) {
       Write-Output (Invoke-PasteJson $targetHandle $targetProcessId)
+    } else {
+      Write-Output '{"success":false}'
+    }
+  } elseif ($line.StartsWith("COPY|")) {
+    $parts = $line.Split('|')
+    [long]$targetHandle = 0
+    [long]$targetProcessId = 0
+    if ($parts.Length -ge 3 -and [long]::TryParse($parts[1], [ref]$targetHandle) -and [long]::TryParse($parts[2], [ref]$targetProcessId)) {
+      Write-Output (Invoke-CopyJson $targetHandle $targetProcessId)
     } else {
       Write-Output '{"success":false}'
     }

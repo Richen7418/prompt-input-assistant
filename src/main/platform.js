@@ -149,6 +149,24 @@ async function pasteWindows(target) {
   }
 }
 
+async function copyWindows(target) {
+  const windowHandle = String(target?.windowHandle ?? 0);
+  const processId = String(target?.processId ?? 0);
+  try {
+    return (await sendWindowsCommand(`COPY|${windowHandle}|${processId}`)).success === true;
+  } catch (error) {
+    const output = await runPowerShell([
+      "-Action",
+      "Copy",
+      "-WindowHandle",
+      windowHandle,
+      "-ProcessId",
+      processId
+    ]);
+    return JSON.parse(output).success === true;
+  }
+}
+
 async function focusWindows(target) {
   const windowHandle = String(target?.windowHandle ?? 0);
   const processId = String(target?.processId ?? 0);
@@ -206,6 +224,23 @@ async function pasteMac(target) {
   return true;
 }
 
+async function copyMac(target) {
+  const processId = Number.parseInt(target?.processId, 10);
+  if (!Number.isInteger(processId) || processId <= 0) {
+    return false;
+  }
+
+  await runAppleScript(`
+    tell application "System Events"
+      set targetProcess to first application process whose unix id is ${processId}
+      set frontmost of targetProcess to true
+      delay 0.08
+      keystroke "c" using command down
+    end tell
+  `);
+  return true;
+}
+
 async function focusMac(target) {
   const processId = Number.parseInt(target?.processId, 10);
   if (!Number.isInteger(processId) || processId <= 0) {
@@ -248,6 +283,20 @@ async function activateAndPaste(target) {
   return false;
 }
 
+async function activateAndCopy(target) {
+  try {
+    if (process.platform === "win32") {
+      return await copyWindows(target);
+    }
+    if (process.platform === "darwin") {
+      return await copyMac(target);
+    }
+  } catch (error) {
+    console.warn("无法复制选中文字：", error.message);
+  }
+  return false;
+}
+
 async function activateWindow(target) {
   try {
     if (process.platform === "win32") return await focusWindows(target);
@@ -271,4 +320,11 @@ function shutdownPlatformBridge() {
   }
 }
 
-module.exports = { activateAndPaste, activateWindow, captureTarget, initializePlatformBridge, shutdownPlatformBridge };
+module.exports = {
+  activateAndCopy,
+  activateAndPaste,
+  activateWindow,
+  captureTarget,
+  initializePlatformBridge,
+  shutdownPlatformBridge
+};

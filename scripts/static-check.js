@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const requiredFiles = [
   "package.json",
   "src/main/main.js",
+  "src/main/clipboard.js",
   "src/main/learning-store.js",
   "src/main/platform.js",
   "src/preload.js",
@@ -28,7 +29,7 @@ for (const file of requiredFiles) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-assert.equal(packageJson.version, "0.1.4");
+assert.equal(packageJson.version, "0.1.5");
 assert.equal(packageJson.main, "src/main/main.js");
 assert.equal(packageJson.build.appId, "local.prompt.inputassistant");
 

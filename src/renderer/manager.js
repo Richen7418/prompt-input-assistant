@@ -52,17 +52,21 @@ function updateStatus() {
   elements.launchAtLogin.checked = library.settings.launchAtLogin === true;
   elements.dataPath.textContent = status.dataPath ? `数据：${status.dataPath}` : "";
 
+  const quickAddLabel = status.platform === "darwin" ? "⌘ + ;" : "Ctrl + ;";
   if (!elements.triggerEnabled.checked) {
-    elements.triggerStatus.textContent = "分号触发已暂停；可从这里或托盘菜单重新启用。";
+    elements.triggerStatus.textContent = "分号检索和快速收录已暂停；可从这里或托盘菜单重新启用。";
     elements.triggerStatus.className = "status-line";
-  } else if (status.trigger?.primary) {
-    elements.triggerStatus.textContent = "分号触发正常。关闭本窗口到托盘后，在目标输入框按 ; 即可检索。";
+  } else if (status.trigger?.search && status.trigger?.quickAdd) {
+    elements.triggerStatus.textContent = `快捷键正常：按 ; 检索，选中文字后按 ${quickAddLabel} 快速收录。`;
     elements.triggerStatus.className = "status-line good";
-  } else if (status.trigger?.fallback) {
-    elements.triggerStatus.textContent = "单分号快捷键被其他程序占用，请暂用 Ctrl/⌘ + ;。";
+  } else if (status.trigger?.search) {
+    elements.triggerStatus.textContent = `${quickAddLabel} 被其他程序占用，分号检索仍可正常使用。`;
+    elements.triggerStatus.className = "status-line warning";
+  } else if (status.trigger?.quickAdd) {
+    elements.triggerStatus.textContent = `单分号快捷键被其他程序占用，${quickAddLabel} 快速收录仍可使用。`;
     elements.triggerStatus.className = "status-line warning";
   } else {
-    elements.triggerStatus.textContent = "管理窗口打开时会暂时释放分号；关闭窗口后自动启用。";
+    elements.triggerStatus.textContent = "管理窗口打开时会暂时释放快捷键；关闭或切换窗口后自动启用。";
     elements.triggerStatus.className = "status-line";
   }
 }
@@ -136,15 +140,16 @@ function renderPrompts() {
   }
 }
 
-function openPromptDialog(prompt = null) {
-  elements.dialogTitle.textContent = prompt ? "编辑提示词" : "新增提示词";
+function openPromptDialog(prompt = null, options = {}) {
+  const quickAdd = !prompt && options.quickAdd === true;
+  elements.dialogTitle.textContent = prompt ? "编辑提示词" : quickAdd ? "快速新增提示词" : "新增提示词";
   elements.promptId.value = prompt?.id ?? "";
   elements.titleInput.value = prompt?.title ?? "";
-  elements.contentInput.value = prompt?.content ?? "";
+  elements.contentInput.value = prompt?.content ?? String(options.content ?? "");
   elements.keywordsInput.value = prompt?.keywords?.join("，") ?? "";
   elements.tagsInput.value = prompt?.tags?.join("，") ?? "";
   elements.aliasesInput.value = prompt?.aliases?.join(", ") ?? "";
-  elements.dialog.showModal();
+  if (!elements.dialog.open) elements.dialog.showModal();
   elements.titleInput.focus();
 }
 
@@ -215,6 +220,10 @@ window.promptAssistant.onLibraryChanged((payload) => {
   if (payload?.status) status = payload.status;
   updateStatus();
   renderPrompts();
+});
+window.promptAssistant.onQuickAdd(({ content, truncated } = {}) => {
+  openPromptDialog(null, { content, quickAdd: true });
+  if (truncated) showToast("选中文字超过 20000 个字符，已截取前 20000 个字符", "error");
 });
 window.promptAssistant.onManagerNotice(({ message, type }) => showToast(message, type === "warning" ? "error" : type));
 
