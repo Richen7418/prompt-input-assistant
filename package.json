@@ -1,7 +1,7 @@
 {
   "name": "prompt-input-assistant",
   "productName": "中文提示词输入助手",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "适用于 Windows 与 macOS 的本地提示词桌面输入助手",
   "author": "本地个人项目",
   "private": true,
@@ -16,7 +16,9 @@
     "smoke:app": "electron . --full-smoke-test",
     "pack:win": "electron-builder --win dir",
     "dist:win": "electron-builder --win nsis",
-    "dist:mac": "electron-builder --mac dmg zip"
+    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:mac:x64": "electron-builder --mac dmg zip --x64",
+    "dist:mac:arm64": "electron-builder --mac dmg zip --arm64"
   },
   "devDependencies": {
     "electron": "43.3.0",
@@ -53,12 +55,16 @@
     "mac": {
       "icon": "assets/icon.png",
       "category": "public.app-category.productivity",
+      "minimumSystemVersion": "12.0.0",
       "target": [
         "dmg",
         "zip"
       ],
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "用于恢复原输入窗口并将选中的提示词粘贴到光标位置。"
+      }
     }
   }
 }

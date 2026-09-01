@@ -33,6 +33,13 @@ const { ICON_BASE64 } = require("../../scripts/generate-assets");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 const isFullSmokeTest = process.argv.includes("--full-smoke-test");
+const fullSmokeUserDataPath = isFullSmokeTest
+  ? fs.mkdtempSync(path.join(app.getPath("temp"), "prompt-input-assistant-smoke-"))
+  : null;
+if (fullSmokeUserDataPath) {
+  app.setPath("userData", fullSmokeUserDataPath);
+  process.on("exit", () => fs.rmSync(fullSmokeUserDataPath, { recursive: true, force: true }));
+}
 const SEARCH_TRIGGER = ";";
 const QUICK_ADD_TRIGGER = "CommandOrControl+;";
 const QUICK_ADD_CONTENT_LIMIT = 20000;
@@ -205,7 +212,6 @@ async function verifyPopupKeyboardNavigation() {
 
 async function verifyQuickAddForm() {
   const content = "快速收录测试正文\n第二行";
-  showManager();
   managerWindow.webContents.send("manager:quick-add", { content, truncated: false });
   await delay(100);
   const result = await managerWindow.webContents.executeJavaScript(`(() => ({
@@ -839,6 +845,16 @@ async function initialize() {
   const userDataPath = app.getPath("userData");
   store = new PromptStore(path.join(userDataPath, "prompt-library.json"));
   store.load();
+  if (isFullSmokeTest && store.snapshot().prompts.length < 4) {
+    for (let index = 1; index <= 4; index += 1) {
+      store.savePrompt({
+        id: `smoke-prompt-${index}`,
+        title: `冒烟测试提示词 ${index}`,
+        content: `仅用于完整应用测试的提示词 ${index}`,
+        tags: ["测试"]
+      });
+    }
+  }
   learningStore = new PromptLearningStore(path.join(userDataPath, "prompt-learning.json"));
   learningStore.load(store.snapshot().prompts, store.legacyHistorySnapshot());
   store.discardLegacySelectionHistory();

@@ -29,7 +29,7 @@ for (const file of requiredFiles) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-assert.equal(packageJson.version, "0.1.5");
+assert.equal(packageJson.version, "0.1.6");
 assert.equal(packageJson.main, "src/main/main.js");
 assert.equal(packageJson.build.appId, "local.prompt.inputassistant");
 

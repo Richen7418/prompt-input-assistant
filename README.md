@@ -1,4 +1,4 @@
-# 🚀 中文提示词输入助手 V0.1.5
+# 🚀 中文提示词输入助手 V0.1.6
 
 > **以前上网靠拨号，现在提示靠分号。**
 
@@ -78,9 +78,18 @@
 
 ## 下载
 
-- [下载最新 Windows 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/latest)
-- 当前提供 Windows x64 安装包。安装包尚未进行商业代码签名，首次运行时可能出现 SmartScreen 提示。
-- macOS 版本的代码已经实现，但仍需要在 macOS 设备上完成签名、打包和运行验收。
+- [下载 macOS Intel x64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.6/prompt-input-assistant-0.1.6-mac-x64.dmg)
+- [下载 macOS Apple Silicon arm64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.6/prompt-input-assistant-0.1.6-mac-arm64.dmg)
+- [下载 Windows x64 安装包（v0.1.5）](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.5/prompt-input-assistant-0.1.5-win-x64.exe)
+- macOS 安装包目前没有 Apple Developer ID 签名或公证。首次打开时，请在 Finder 中右键点击应用并选择“打开”，然后再次确认。
+- Windows 安装包尚未进行商业代码签名，首次运行时可能出现 SmartScreen 提示。
+
+## V0.1.6 变化
+
+- 首次提供 macOS 安装包，分别支持 Intel x64 与 Apple Silicon arm64。
+- 已在 Intel Mac、macOS 12.7.4 上完成快捷键、窗口、托盘、页面初始化和本机安装验证。
+- 安装包声明 macOS 12.0 最低版本，并加入自动化权限用途说明。
+- README 新增 macOS 安装、首次授权、数据位置和分架构打包指引。
 
 ## V0.1.5 变化
 
@@ -173,7 +182,7 @@ prompt-input-assistant/
 
 - Node.js 22 或更高版本
 - npm（Node.js 自带）
-- Windows 10/11，或 macOS 14 及以上
+- Windows 10/11，或 macOS 12 及以上
 
 项目不需要 React、Vue 或前端构建工具。界面是原生 HTML、CSS、JavaScript；Electron 只负责提供跨平台桌面窗口、托盘和系统能力。
 
@@ -200,9 +209,12 @@ npm start
 
 ## macOS 首次授权
 
+1. 打开下载的 DMG，把“中文提示词输入助手”拖到“Applications”文件夹。
+2. 因当前安装包未签名和公证，首次启动请在 Finder 的“应用程序”中右键点击应用，选择“打开”，再确认一次。
+
 macOS 会限制应用恢复其他程序焦点和模拟粘贴。第一次使用自动粘贴时：
 
-1. 打开“系统设置 → 隐私与安全性 → 辅助功能”。
+1. 打开“系统设置（或系统偏好设置）→ 隐私与安全性 → 辅助功能”。
 2. 允许“中文提示词输入助手”；运行开发版时，也可能需要允许启动它的 Terminal。
 3. 如果系统询问是否允许控制“System Events”，请选择允许。
 4. 授权后完全退出并重新启动应用。
@@ -256,7 +268,7 @@ macOS 会限制应用恢复其他程序焦点和模拟粘贴。第一次使用�
 
 ## 数据位置与隐私
 
-提示词保存在 `prompt-library.json`，本地学习结果单独保存在同一 `userData` 目录下的 `prompt-learning.json`。程序不联网同步、不记录全局按键内容，也不加载远程代码。导出 JSON 只包含提示词，不包含个人选择习惯。
+提示词保存在 `prompt-library.json`，本地学习结果单独保存在同一 `userData` 目录下的 `prompt-learning.json`。macOS 安装版默认目录为 `~/Library/Application Support/中文提示词输入助手/`。程序不联网同步、不记录全局按键内容，也不加载远程代码。导出 JSON 只包含提示词，不包含个人选择习惯。
 
 学习文件保存聚合分数，而不是逐次选择日志。每次选择时按以下公式更新：
 
@@ -293,10 +305,12 @@ Windows 安装包必须在 Windows 上构建：
 npm run dist:win
 ```
 
-macOS 安装包必须在 Mac 上构建：
+macOS 安装包必须在 Mac 上构建；默认构建当前机器架构，也可以明确构建 Intel 或 Apple Silicon 版本：
 
 ```bash
 npm run dist:mac
+npm run dist:mac:x64
+npm run dist:mac:arm64
 ```
 
 产物位于 `release`。当前 Windows 安装包没有商业代码签名，macOS 构建也没有签名或公证；从源码自行构建时，系统可能要求手动允许应用运行。
@@ -318,7 +332,7 @@ npm run dist:mac
 - macOS 自动粘贴依赖“辅助功能/自动化”授权。
 - 剪贴板会恢复常见格式；部分应用的私有剪贴板格式可能无法完整恢复。自动粘贴失败时，为避免丢失提示词，应用不会恢复旧剪贴板，而会保留待粘贴文本。
 - 密码框和安全输入场景尚不能被跨平台可靠识别。V0.1 的首批目标仅为 ChatGPT Classic 与 ChatGPT；不要在密码输入期间触发助手。
-- macOS 平台代码已实现并通过静态检查，但 Windows 环境无法执行 macOS 的运行时和打包验收，必须在 Mac 上完成最终验证。
+- macOS x64 版本已在 Intel Mac、macOS 12.7.4 上完成运行时和安装验收；arm64 产物为跨架构构建，尚未在 Apple Silicon 实机验收。
 
 ## 开源许可
 
