@@ -1,4 +1,4 @@
-# 🚀 中文提示词输入助手 V0.1.6
+# 🚀 中文提示词输入助手 V0.1.7
 
 > **以前上网靠拨号，现在提示靠分号。**
 
@@ -78,11 +78,20 @@
 
 ## 下载
 
-- [下载 macOS Intel x64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.6/prompt-input-assistant-0.1.6-mac-x64.dmg)
-- [下载 macOS Apple Silicon arm64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.6/prompt-input-assistant-0.1.6-mac-arm64.dmg)
+- [下载 macOS Intel x64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.7/prompt-input-assistant-0.1.7-mac-x64.dmg)
+- [下载 macOS Apple Silicon arm64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.7/prompt-input-assistant-0.1.7-mac-arm64.dmg)
 - [下载 Windows x64 安装包（v0.1.5）](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.5/prompt-input-assistant-0.1.5-win-x64.exe)
-- macOS 安装包目前没有 Apple Developer ID 签名或公证。首次打开时，请在 Finder 中右键点击应用并选择“打开”，然后再次确认。
+- macOS 安装包带有 ad-hoc 本地签名，但没有 Apple Developer ID 签名或公证。首次打开时，请在 Finder 中右键点击应用并选择“打开”，然后再次确认；首次安装或更新后请重新授予一次辅助功能权限。
 - Windows 安装包尚未进行商业代码签名，首次运行时可能出现 SmartScreen 提示。
+
+## V0.1.7 修复
+
+- macOS 候选窗现在可跨 Space 显示，并能覆盖处于系统全屏状态的输入应用。
+- 修复从全屏 ChatGPT 或其他输入页按 `;` 时被切回普通桌面、看不到候选窗的问题。
+- 提示词管理主窗口仍是普通桌面窗口，不会跟随到其他 Space 或全屏页面。
+- `Ctrl+;` 快速新增改为独立浮动表单，直接覆盖在选中文字所在程序上方，不再打开管理主窗口。
+- DMG/ZIP 内的 macOS 应用加入 ad-hoc 本地签名，并保持 Bundle ID 为 `local.prompt.inputassistant`。
+- Windows 窗口行为保持不变。
 
 ## V0.1.6 变化
 
@@ -219,6 +228,8 @@ macOS 会限制应用恢复其他程序焦点和模拟粘贴。第一次使用�
 3. 如果系统询问是否允许控制“System Events”，请选择允许。
 4. 授权后完全退出并重新启动应用。
 
+应用会在运行状态区域检测该权限；未授权时可点击“打开辅助功能设置”。缺少权限时，提示词或普通分号会保留在剪贴板，但 macOS 不允许应用自动写回目标输入框。
+
 未授权时，提示词会保留在剪贴板中，需要手动按 `⌘V`。
 
 ## 使用方法
@@ -231,11 +242,11 @@ macOS 会限制应用恢复其他程序焦点和模拟粘贴。第一次使用�
 6. 可以继续检索和插入其他提示词，按空格或 `Esc` 关闭候选窗。
 7. 用户检查内容后自行发送；应用不会自动发送。
 
-如果单分号快捷键已被其他程序占用，状态页会提示使用备用快捷键 `Ctrl+;`（Windows）或 `⌘+;`（macOS）。管理窗口获得焦点时会主动释放全局分号，因此可以正常编辑包含分号的提示词；关闭管理窗口后重新注册。
+快速收录选中文字使用 `Ctrl+;`（Windows 与 macOS）；macOS 另外兼容 `⌘+;`。管理窗口获得焦点时会主动释放全局快捷键，因此可以正常编辑包含分号的提示词；关闭管理窗口后重新注册。
 
 ### 输入普通分号
 
-全局触发启用时，单独的 `;` 会打开候选窗口。如果本来只是想输入普通分号，可以按 `Esc`；应用会关闭候选窗口并把 `;` 还原到原输入框。也可以从托盘临时暂停分号触发。
+全局触发启用时，单独的 `;` 会打开候选窗口。如果本来只是想输入普通分号，可以按 `Esc`；应用会关闭候选窗口并把 `;`（以及尚未提交的检索文字）还原到原输入框。也可以从托盘临时暂停分号触发。
 
 ## 导入现有 Chrome 扩展数据
 
@@ -325,7 +336,7 @@ npm run dist:mac:arm64
 
 ## 已知限制
 
-- V0.1 在 Windows 上根据目标窗口边界把候选框放在窗口靠下居中位置；macOS 使用当前屏幕靠下居中位置。还没有在所有应用中精确跟随文字光标。
+- V0.1 在 Windows 上根据目标窗口边界把候选框放在窗口靠下居中位置；macOS 使用当前屏幕靠下居中位置，并支持覆盖全屏应用。还没有在所有应用中精确跟随文字光标。
 - ChatGPT Classic 和新版 ChatGPT 会更新内部实现。当前版本通过操作系统恢复应用窗口并粘贴，不依赖它们的动态 DOM/CSS，但仍需在两端分别人工验收。
 - 管理窗口必须关闭到托盘后才会注册单分号，避免编辑提示词时劫持普通分号。
 - Windows 不允许普通权限应用向管理员权限应用可靠注入文字；两边权限等级应保持一致。

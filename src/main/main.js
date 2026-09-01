@@ -13,6 +13,8 @@ const {
   nativeImage,
   Notification,
   screen,
+  shell,
+  systemPreferences,
   Tray
 } = require("electron");
 const { captureSelectedText, restoreClipboard, snapshotClipboard } = require("./clipboard");
@@ -41,17 +43,22 @@ if (fullSmokeUserDataPath) {
   process.on("exit", () => fs.rmSync(fullSmokeUserDataPath, { recursive: true, force: true }));
 }
 const SEARCH_TRIGGER = ";";
-const QUICK_ADD_TRIGGER = "CommandOrControl+;";
+const QUICK_ADD_TRIGGERS = process.platform === "darwin"
+  ? ["Control+;", "Command+;"]
+  : ["CommandOrControl+;"];
 const QUICK_ADD_CONTENT_LIMIT = 20000;
 const PREDICTION_ESCAPE = "Escape";
 const PREDICTION_SPACE = "Space";
+const MAC_ACCESSIBILITY_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 
 let store;
 let learningStore;
 let managerWindow;
 let popupWindow;
+let quickAddWindow;
 let tray;
 let currentTarget;
+let quickAddTarget;
 let triggerStatus = { search: false, quickAdd: false };
 let openingPopup = false;
 let quickAddInProgress = false;
@@ -64,9 +71,32 @@ let quitting = false;
 let insertingPrompt = false;
 let closeAfterInsert = false;
 let predictionCloseStatus = { escape: false, space: false };
+let accessibilitySettingsOpened = false;
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForSmokeCondition(check, message, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await delay(20);
+  }
+  throw new Error(message);
+}
+
+let smokePopupSequence = 0;
+
+async function sendSmokePopupOpen(payload) {
+  const targetName = `SmokeTestTarget-${++smokePopupSequence}`;
+  popupWindow.webContents.send("popup:open", { ...payload, targetName });
+  await waitForSmokeCondition(
+    () => popupWindow.webContents.executeJavaScript(
+      `document.querySelector("#target-name")?.textContent === ${JSON.stringify(`插入到 ${targetName}`)}`
+    ),
+    "Prediction popup renderer did not acknowledge the latest smoke payload"
+  );
 }
 
 function waitForWindowLoad(window) {
@@ -90,6 +120,14 @@ function rendererHealth(window) {
   }))()`);
 }
 
+function quickAddRendererHealth() {
+  return quickAddWindow.webContents.executeJavaScript(`(() => ({
+    promptAssistant: typeof window.promptAssistant === "object",
+    titleInput: Boolean(document.querySelector("#title-input")),
+    contentInput: Boolean(document.querySelector("#content-input"))
+  }))()`);
+}
+
 async function verifyPopupCloseShortcut(key, code) {
   const library = store.snapshot();
   const firstPrompt = library.prompts[0];
@@ -97,20 +135,46 @@ async function verifyPopupCloseShortcut(key, code) {
   previousSelection = selectionReference(firstPrompt);
   currentTarget = { processName: "SmokeTestTarget" };
   await focusPopupWindow();
-  popupWindow.webContents.send("popup:open", {
+  await sendSmokePopupOpen({
     prompts: library.prompts,
     settings: library.settings,
     learning: learningStore.viewFor(previousSelection),
     previousSelection,
-    mode: "prompt",
-    targetName: "SmokeTestTarget"
+    mode: "prompt"
   });
-  await delay(80);
   await popupWindow.webContents.executeJavaScript(
     `window.dispatchEvent(new KeyboardEvent("keydown", ${JSON.stringify({ key, code })}))`
   );
-  await delay(120);
-  if (popupWindow.isVisible()) throw new Error(`${code} did not close the prediction popup`);
+  await waitForSmokeCondition(
+    () => !popupWindow.isVisible() && currentTarget === null,
+    `${code} did not close the prediction popup`
+  );
+}
+
+async function verifyPopupCancelPreservesRawText() {
+  const clipboardSnapshot = snapshotClipboard(clipboard);
+  try {
+    previousSelection = null;
+    currentTarget = { processName: "SmokeTestTarget" };
+    await focusPopupWindow();
+    await sendSmokePopupOpen({
+      prompts: store.snapshot().prompts,
+      settings: store.snapshot().settings,
+      learning: learningStore.viewFor(null),
+      previousSelection: null,
+      mode: "prompt"
+    });
+    await popupWindow.webContents.executeJavaScript(
+      `window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape", code: "Escape" }))`
+    );
+    await waitForSmokeCondition(
+      () => !popupWindow.isVisible() && currentTarget === null && clipboard.readText() === ";",
+      "Escape did not preserve the uncommitted semicolon"
+    );
+  } finally {
+    closePopupWindow();
+    restoreClipboard(clipboard, clipboardSnapshot);
+  }
 }
 
 async function verifyPopupCompositionSafety() {
@@ -120,15 +184,13 @@ async function verifyPopupCompositionSafety() {
   previousSelection = selectionReference(firstPrompt);
   currentTarget = { processName: "SmokeTestTarget" };
   await focusPopupWindow();
-  popupWindow.webContents.send("popup:open", {
+  await sendSmokePopupOpen({
     prompts: library.prompts,
     settings: library.settings,
     learning: learningStore.viewFor(previousSelection),
     previousSelection,
-    mode: "prompt",
-    targetName: "SmokeTestTarget"
+    mode: "prompt"
   });
-  await delay(80);
   await popupWindow.webContents.executeJavaScript(`(() => {
     const input = document.querySelector("#query-input");
     input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "中" }));
@@ -152,15 +214,13 @@ async function verifyPopupKeyboardNavigation() {
   const bounds = popupBounds();
   popupWindow.setBounds({ ...bounds, height: 438 }, false);
   await focusPopupWindow();
-  popupWindow.webContents.send("popup:open", {
+  await sendSmokePopupOpen({
     prompts: library.prompts,
     settings: { ...library.settings, resultLimit: 3 },
     learning: learningStore.viewFor(null),
     previousSelection: null,
-    mode: "prompt",
-    targetName: "SmokeTestTarget"
+    mode: "prompt"
   });
-  await delay(100);
   const result = await popupWindow.webContents.executeJavaScript(`(() => {
     const list = document.querySelector("#candidate-list");
     const input = document.querySelector("#query-input");
@@ -212,22 +272,32 @@ async function verifyPopupKeyboardNavigation() {
 
 async function verifyQuickAddForm() {
   const content = "快速收录测试正文\n第二行";
-  managerWindow.webContents.send("manager:quick-add", { content, truncated: false });
+  quickAddTarget = { processName: "SmokeTestTarget" };
+  configureMacFloatingWindow(quickAddWindow);
+  quickAddWindow.show();
+  quickAddWindow.focus();
+  quickAddWindow.webContents.send("quick-add:open", {
+    content,
+    truncated: false,
+    targetName: "SmokeTestTarget"
+  });
   await delay(100);
-  const result = await managerWindow.webContents.executeJavaScript(`(() => ({
-    dialogOpen: document.querySelector("#prompt-dialog").open,
-    dialogTitle: document.querySelector("#dialog-title").textContent,
+  const result = await quickAddWindow.webContents.executeJavaScript(`(() => ({
+    windowVisible: document.visibilityState === "visible",
+    heading: document.querySelector("h1").textContent,
     title: document.querySelector("#title-input").value,
     content: document.querySelector("#content-input").value,
-    titleFocused: document.activeElement === document.querySelector("#title-input")
+    titleFocused: document.activeElement === document.querySelector("#title-input"),
+    targetName: document.querySelector("#target-name").textContent
   }))()`);
-  await managerWindow.webContents.executeJavaScript(`document.querySelector("#prompt-dialog").close()`);
-  managerWindow.hide();
-  if (!result.dialogOpen
-    || result.dialogTitle !== "快速新增提示词"
+  quickAddWindow.hide();
+  quickAddTarget = null;
+  if (!result.windowVisible
+    || result.heading !== "快速新增提示词"
     || result.title !== ""
     || result.content !== content
-    || !result.titleFocused) {
+    || !result.titleFocused
+    || result.targetName !== "来自 SmokeTestTarget") {
     throw new Error(`Quick add form smoke test failed: ${JSON.stringify(result)}`);
   }
 }
@@ -242,11 +312,27 @@ function getRendererPath(fileName) {
 
 function focusedAssistantWindow() {
   const focused = BrowserWindow.getFocusedWindow();
-  return focused === managerWindow || focused === popupWindow;
+  return focused === managerWindow || focused === popupWindow || focused === quickAddWindow;
+}
+
+function setMacActivationPolicy(policy) {
+  if (process.platform === "darwin") {
+    app.setActivationPolicy(policy);
+  }
+}
+
+function configureMacFloatingWindow(window) {
+  if (process.platform !== "darwin" || !window || window.isDestroyed()) return;
+  setMacActivationPolicy("accessory");
+  window.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true
+  });
+  window.setAlwaysOnTop(true, "screen-saver");
 }
 
 function unregisterTriggerShortcuts() {
-  for (const accelerator of [SEARCH_TRIGGER, QUICK_ADD_TRIGGER]) {
+  for (const accelerator of [SEARCH_TRIGGER, ...QUICK_ADD_TRIGGERS]) {
     if (globalShortcut.isRegistered(accelerator)) {
       globalShortcut.unregister(accelerator);
     }
@@ -263,13 +349,16 @@ function unregisterPredictionCloseShortcuts() {
   predictionCloseStatus = { escape: false, space: false };
 }
 
-async function requestPredictionClose() {
+async function requestPredictionClose(extra = "") {
   if (insertingPrompt) {
     closeAfterInsert = true;
     if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
       popupWindow.hide();
     }
     return true;
+  }
+  if (!previousSelection && popupRawText) {
+    return insertRawTextAndClose(`${popupRawText}${extra}`);
   }
   return closePopupAndRestoreTarget();
 }
@@ -285,7 +374,7 @@ function registerPredictionCloseShortcuts() {
   }
   try {
     predictionCloseStatus.space = globalShortcut.register(PREDICTION_SPACE, () => {
-      void requestPredictionClose();
+      void requestPredictionClose(" ");
     });
   } catch (error) {
     console.warn("Space close shortcut registration failed:", error.message);
@@ -296,7 +385,6 @@ function registerPredictionCloseShortcuts() {
 function syncPredictionCloseShortcuts() {
   const needsFallback = Boolean(
     currentTarget
-    && previousSelection
     && popupWindow
     && !popupWindow.isDestroyed()
     && popupWindow.isVisible()
@@ -325,6 +413,7 @@ function registerTriggerShortcuts() {
   if (!store?.snapshot().settings.triggerEnabled
     || focusedAssistantWindow()
     || popupWindow?.isVisible()
+    || quickAddWindow?.isVisible()
     || currentTarget
     || openingPopup
     || quickAddInProgress) {
@@ -337,12 +426,15 @@ function registerTriggerShortcuts() {
   } catch (error) {
     console.warn("分号快捷键注册失败：", error.message);
   }
-  try {
-    triggerStatus.quickAdd = globalShortcut.register(QUICK_ADD_TRIGGER, () => {
-      void startQuickAdd();
-    });
-  } catch (error) {
-    console.warn("快速收录快捷键注册失败：", error.message);
+  for (const [index, accelerator] of QUICK_ADD_TRIGGERS.entries()) {
+    try {
+      const registered = globalShortcut.register(accelerator, () => {
+        void startQuickAdd();
+      });
+      if (index === 0) triggerStatus.quickAdd = registered;
+    } catch (error) {
+      console.warn(`快速收录快捷键 ${accelerator} 注册失败：`, error.message);
+    }
   }
   broadcastStatus();
 }
@@ -351,11 +443,29 @@ function getStatus() {
   return {
     platform: process.platform,
     trigger: { ...triggerStatus },
+    accessibilityTrusted: process.platform !== "darwin"
+      || systemPreferences.isTrustedAccessibilityClient(false),
     dataPath: store?.filePath ?? "",
     learningPath: learningStore?.filePath ?? "",
     targetName: currentTarget?.processName ?? "",
     isPackaged: app.isPackaged
   };
+}
+
+function macAccessibilityTrusted(prompt = false) {
+  return process.platform !== "darwin"
+    || systemPreferences.isTrustedAccessibilityClient(prompt);
+}
+
+async function openMacAccessibilitySettings() {
+  if (process.platform !== "darwin") return true;
+  if (macAccessibilityTrusted(false)) return true;
+  systemPreferences.isTrustedAccessibilityClient(true);
+  if (!accessibilitySettingsOpened) {
+    accessibilitySettingsOpened = true;
+    await shell.openExternal(MAC_ACCESSIBILITY_SETTINGS_URL);
+  }
+  return false;
 }
 
 function managerNotice(message, type = "info") {
@@ -367,6 +477,11 @@ function managerNotice(message, type = "info") {
 function showManager() {
   if (!managerWindow || managerWindow.isDestroyed()) {
     return;
+  }
+  setMacActivationPolicy("regular");
+  if (process.platform === "darwin") {
+    managerWindow.setVisibleOnAllWorkspaces(false);
+    managerWindow.setAlwaysOnTop(false);
   }
   managerWindow.show();
   managerWindow.focus();
@@ -386,6 +501,11 @@ function showShortNotification(message) {
 
 async function startQuickAdd() {
   if (quickAddInProgress || openingPopup || currentTarget) return false;
+  if (!macAccessibilityTrusted(false)) {
+    showShortNotification("请先为中文提示词输入助手开启辅助功能权限");
+    void openMacAccessibilitySettings();
+    return false;
+  }
   quickAddInProgress = true;
   unregisterTriggerShortcuts();
 
@@ -399,11 +519,22 @@ async function startQuickAdd() {
 
     const truncated = selectedText.length > QUICK_ADD_CONTENT_LIMIT;
     const content = selectedText.slice(0, QUICK_ADD_CONTENT_LIMIT);
-    await waitForWindowLoad(managerWindow);
-    showManager();
-    managerWindow.webContents.send("manager:quick-add", { content, truncated });
+    quickAddTarget = target;
+    await waitForWindowLoad(quickAddWindow);
+    quickAddWindow.setBounds(quickAddBounds(), false);
+    configureMacFloatingWindow(quickAddWindow);
+    quickAddWindow.show();
+    if (process.platform === "darwin") quickAddWindow.moveTop();
+    quickAddWindow.focus();
+    quickAddWindow.webContents.send("quick-add:open", {
+      content,
+      truncated,
+      targetName: target?.processName ?? "当前输入程序"
+    });
     return true;
   } catch (error) {
+    quickAddTarget = null;
+    if (quickAddWindow?.isVisible()) quickAddWindow.hide();
     console.warn("快速收录选中文字失败：", error.message);
     showShortNotification("请先选中内容");
     return false;
@@ -440,6 +571,33 @@ function popupBounds() {
   };
 }
 
+function quickAddBounds() {
+  const anchor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(anchor);
+  const { workArea } = display;
+  const width = Math.min(640, workArea.width - 24);
+  const height = Math.min(650, workArea.height - 24);
+  return {
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    width,
+    height
+  };
+}
+
+async function closeQuickAddWindow(saved = false) {
+  const target = quickAddTarget;
+  if (quickAddWindow && !quickAddWindow.isDestroyed() && quickAddWindow.isVisible()) {
+    quickAddWindow.hide();
+  }
+  quickAddTarget = null;
+  if (saved) showShortNotification("提示词已保存");
+  setTimeout(registerTriggerShortcuts, 80);
+  if (!target) return false;
+  await delay(60);
+  return activateWindow(target);
+}
+
 function nativeWindowTarget(window) {
   if (!window || window.isDestroyed() || process.platform !== "win32") return null;
   const handle = window.getNativeWindowHandle();
@@ -455,7 +613,9 @@ function nativeWindowTarget(window) {
 }
 
 async function focusPopupWindow() {
+  configureMacFloatingWindow(popupWindow);
   popupWindow.show();
+  if (process.platform === "darwin") popupWindow.moveTop();
   popupWindow.focus();
   if (process.platform !== "win32") return true;
   await delay(40);
@@ -497,8 +657,7 @@ async function openPopup(mode) {
   try {
     popupRawText = pendingMode === "tag" ? ";;" : ";";
     popupWindow.setBounds(popupBounds(), false);
-    popupWindow.show();
-    popupWindow.focus();
+    await focusPopupWindow();
     popupWindow.webContents.send("popup:open", {
       prompts: library.prompts,
       settings: library.settings,
@@ -547,15 +706,19 @@ async function pasteTextIntoTarget(text) {
   popupWindow.hide();
   await delay(140);
 
-  const pasted = await activateAndPaste(currentTarget);
+  const missingAccessibility = !isFullSmokeTest && !macAccessibilityTrusted(false);
+  const pasted = missingAccessibility ? false : await activateAndPaste(currentTarget);
   if (pasted) {
     await delay(450);
     restoreClipboard(clipboard, clipboardSnapshot);
   } else {
     new Notification({
       title: "中文提示词输入助手",
-      body: "自动粘贴失败，提示词已保留在剪贴板，请手动粘贴。"
+      body: missingAccessibility
+        ? "缺少辅助功能权限，内容已保留在剪贴板；请授权后重试。"
+        : "自动粘贴失败，提示词已保留在剪贴板，请手动粘贴。"
     }).show();
+    if (missingAccessibility) void openMacAccessibilitySettings();
   }
 
   return { attempted: true, inserted: pasted, clipboardFallback: !pasted };
@@ -636,9 +799,13 @@ function createManagerWindow() {
     }
   });
   managerWindow.setMenuBarVisibility(false);
+  if (process.platform === "darwin") {
+    managerWindow.setVisibleOnAllWorkspaces(false);
+    managerWindow.setAlwaysOnTop(false);
+  }
   managerWindow.loadFile(getRendererPath("manager.html"));
   managerWindow.once("ready-to-show", () => {
-    if (!isFullSmokeTest) managerWindow.show();
+    if (!isFullSmokeTest) showManager();
   });
   managerWindow.on("focus", unregisterTriggerShortcuts);
   managerWindow.on("blur", () => setTimeout(registerTriggerShortcuts, 80));
@@ -646,13 +813,51 @@ function createManagerWindow() {
     if (!quitting) {
       event.preventDefault();
       managerWindow.hide();
+      setMacActivationPolicy("accessory");
       setTimeout(registerTriggerShortcuts, 80);
+    }
+  });
+}
+
+function createQuickAddWindow() {
+  quickAddWindow = new BrowserWindow({
+    ...(process.platform === "darwin" ? { type: "panel" } : {}),
+    width: 640,
+    height: 650,
+    show: false,
+    frame: false,
+    transparent: false,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: true,
+    backgroundColor: "#101916",
+    webPreferences: {
+      preload: getPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  quickAddWindow.setAlwaysOnTop(true, "pop-up-menu");
+  quickAddWindow.loadFile(getRendererPath("quick-add.html"));
+  quickAddWindow.on("focus", unregisterTriggerShortcuts);
+  quickAddWindow.on("hide", () => setTimeout(registerTriggerShortcuts, 80));
+  quickAddWindow.on("close", (event) => {
+    if (!quitting) {
+      event.preventDefault();
+      void closeQuickAddWindow(false);
     }
   });
 }
 
 function createPopupWindow() {
   popupWindow = new BrowserWindow({
+    ...(process.platform === "darwin" ? { type: "panel" } : {}),
     width: 520,
     height: 438,
     show: false,
@@ -697,7 +902,7 @@ function updateTrayMenu() {
     return;
   }
   const enabled = store.snapshot().settings.triggerEnabled;
-  tray.setContextMenu(Menu.buildFromTemplate([
+  const template = [
     { label: "打开提示词管理", click: showManager },
     {
       label: enabled ? "暂停快捷键" : "启用快捷键",
@@ -710,10 +915,24 @@ function updateTrayMenu() {
         }
         broadcastStatus();
       }
-    },
+    }
+  ];
+  if (process.platform === "darwin") {
+    const trusted = macAccessibilityTrusted(false);
+    template.push(
+      { type: "separator" },
+      {
+        label: trusted ? "辅助功能权限已开启" : "开启辅助功能权限…",
+        enabled: !trusted,
+        click: () => { void openMacAccessibilitySettings(); }
+      }
+    );
+  }
+  template.push(
     { type: "separator" },
     { label: "退出", click: () => { quitting = true; app.quit(); } }
-  ]));
+  );
+  tray.setContextMenu(Menu.buildFromTemplate(template));
 }
 
 function createTray() {
@@ -752,6 +971,7 @@ function reconcileLearningAndSession() {
 function registerIpcHandlers() {
   ipcMain.handle("library:get", () => store.snapshot());
   ipcMain.handle("app:status", () => getStatus());
+  ipcMain.handle("app:open-accessibility-settings", () => openMacAccessibilitySettings());
   ipcMain.handle("prompt:save", (_event, prompt) => {
     const saved = store.savePrompt(prompt);
     reconcileLearningAndSession();
@@ -817,6 +1037,7 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("popup:cancel", (_event, rawText) => insertRawTextAndClose(rawText));
   ipcMain.handle("popup:close", () => requestPredictionClose());
+  ipcMain.handle("quick-add:close", (_event, saved) => closeQuickAddWindow(saved === true));
   ipcMain.handle("popup:focus", () => {
     if (!popupWindow || popupWindow.isDestroyed() || !popupWindow.isVisible()) return false;
     return focusPopupWindow();
@@ -830,12 +1051,21 @@ function registerIpcHandlers() {
 
 async function runSmokeTest() {
   let search = false;
-  let quickAdd = false;
+  const quickAddAccelerators = {};
   try {
     search = globalShortcut.register(SEARCH_TRIGGER, () => {});
-    quickAdd = globalShortcut.register(QUICK_ADD_TRIGGER, () => {});
+    for (const accelerator of QUICK_ADD_TRIGGERS) {
+      quickAddAccelerators[accelerator] = false;
+      quickAddAccelerators[accelerator] = globalShortcut.register(accelerator, () => {});
+    }
   } finally {
-    console.log(JSON.stringify({ electron: process.versions.electron, platform: process.platform, search, quickAdd }));
+    console.log(JSON.stringify({
+      electron: process.versions.electron,
+      platform: process.platform,
+      search,
+      quickAdd: Object.values(quickAddAccelerators).every(Boolean),
+      quickAddAccelerators
+    }));
     globalShortcut.unregisterAll();
     app.quit();
   }
@@ -861,8 +1091,18 @@ async function initialize() {
   initializePlatformBridge();
   registerIpcHandlers();
   createPopupWindow();
+  createQuickAddWindow();
   createManagerWindow();
   createTray();
+
+  if (process.platform === "darwin" && !isFullSmokeTest) {
+    setTimeout(() => {
+      if (macAccessibilityTrusted(false)) return;
+      systemPreferences.isTrustedAccessibilityClient(true);
+      managerNotice("请开启辅助功能权限，否则无法快速收录或把提示词、分号写回输入框。", "warning");
+      broadcastStatus();
+    }, 700);
+  }
 
   app.on("activate", showManager);
   app.on("before-quit", () => { quitting = true; });
@@ -873,18 +1113,29 @@ async function initialize() {
   });
 
   if (isFullSmokeTest) {
-    await Promise.all([waitForWindowLoad(managerWindow), waitForWindowLoad(popupWindow)]);
-    const [managerHealth, popupHealth] = await Promise.all([
+    await Promise.all([
+      waitForWindowLoad(managerWindow),
+      waitForWindowLoad(popupWindow),
+      waitForWindowLoad(quickAddWindow)
+    ]);
+    const [managerHealth, popupHealth, quickAddHealth] = await Promise.all([
       rendererHealth(managerWindow),
-      rendererHealth(popupWindow)
+      rendererHealth(popupWindow),
+      quickAddRendererHealth()
     ]);
     if (!managerHealth.promptAssistant || !managerHealth.focusPopup
       || !managerHealth.promptLearning || !managerHealth.promptSearch
       || !popupHealth.promptAssistant || !popupHealth.focusPopup
-      || !popupHealth.promptLearning || !popupHealth.promptSearch) {
-      throw new Error(`Renderer initialization failed: ${JSON.stringify({ managerHealth, popupHealth })}`);
+      || !popupHealth.promptLearning || !popupHealth.promptSearch
+      || !quickAddHealth.promptAssistant || !quickAddHealth.titleInput || !quickAddHealth.contentInput) {
+      throw new Error(`Renderer initialization failed: ${JSON.stringify({
+        managerHealth,
+        popupHealth,
+        quickAddHealth
+      })}`);
     }
     await verifyQuickAddForm();
+    await verifyPopupCancelPreservesRawText();
     await verifyPopupCloseShortcut("Escape", "Escape");
     await verifyPopupCloseShortcut(" ", "Space");
     await verifyPopupCompositionSafety();
@@ -892,6 +1143,21 @@ async function initialize() {
     const globalCloseKeys = registerPredictionCloseShortcuts();
     if (!globalCloseKeys.escape || !globalCloseKeys.space) {
       throw new Error(`Prediction global close shortcuts failed: ${JSON.stringify(globalCloseKeys)}`);
+    }
+    const fullScreenWorkspaceOverlay = process.platform !== "darwin"
+      || popupWindow.isVisibleOnAllWorkspaces();
+    if (!fullScreenWorkspaceOverlay) {
+      throw new Error("macOS popup is not visible on all workspaces");
+    }
+    const quickAddFullScreenOverlay = process.platform !== "darwin"
+      || quickAddWindow.isVisibleOnAllWorkspaces();
+    if (!quickAddFullScreenOverlay) {
+      throw new Error("macOS quick-add window is not visible on all workspaces");
+    }
+    const managerWorkspaceScoped = process.platform !== "darwin"
+      || !managerWindow.isVisibleOnAllWorkspaces();
+    if (!managerWorkspaceScoped) {
+      throw new Error("macOS manager unexpectedly follows all workspaces");
     }
     unregisterPredictionCloseShortcuts();
     console.log(JSON.stringify({
@@ -903,14 +1169,19 @@ async function initialize() {
       promptCount: store.snapshot().prompts.length,
       rendererHealthy: true,
       quickAddForm: true,
+      quickAddFloatingWindow: true,
+      cancelRestoresRawText: true,
       predictionCloseKeys: true,
       compositionCloseSafety: true,
       candidateKeyboardScope: true,
       scrollableResults: true,
-      predictionGlobalCloseKeys: true
+      predictionGlobalCloseKeys: true,
+      fullScreenWorkspaceOverlay,
+      quickAddFullScreenOverlay,
+      managerWorkspaceScoped
     }));
     quitting = true;
-    app.quit();
+    app.exit(0);
     return;
   }
 

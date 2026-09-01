@@ -4,6 +4,7 @@ const elements = {
   newButton: document.querySelector("#new-prompt-button"),
   triggerEnabled: document.querySelector("#trigger-enabled"),
   triggerStatus: document.querySelector("#trigger-status"),
+  accessibilityButton: document.querySelector("#accessibility-button"),
   dataPath: document.querySelector("#data-path"),
   resultLimit: document.querySelector("#result-limit"),
   contentFontSize: document.querySelector("#content-font-size"),
@@ -52,8 +53,13 @@ function updateStatus() {
   elements.launchAtLogin.checked = library.settings.launchAtLogin === true;
   elements.dataPath.textContent = status.dataPath ? `数据：${status.dataPath}` : "";
 
-  const quickAddLabel = status.platform === "darwin" ? "⌘ + ;" : "Ctrl + ;";
-  if (!elements.triggerEnabled.checked) {
+  const quickAddLabel = status.platform === "darwin" ? "Ctrl + ;（或 ⌘ + ;）" : "Ctrl + ;";
+  const missingAccessibility = status.platform === "darwin" && status.accessibilityTrusted === false;
+  elements.accessibilityButton.hidden = !missingAccessibility;
+  if (missingAccessibility) {
+    elements.triggerStatus.textContent = "需要辅助功能权限：否则无法快速收录，也无法把提示词或普通分号写回原输入框。";
+    elements.triggerStatus.className = "status-line warning";
+  } else if (!elements.triggerEnabled.checked) {
     elements.triggerStatus.textContent = "分号检索和快速收录已暂停；可从这里或托盘菜单重新启用。";
     elements.triggerStatus.className = "status-line";
   } else if (status.trigger?.search && status.trigger?.quickAdd) {
@@ -70,6 +76,11 @@ function updateStatus() {
     elements.triggerStatus.className = "status-line";
   }
 }
+
+elements.accessibilityButton.addEventListener("click", async () => {
+  await window.promptAssistant.openAccessibilitySettings();
+  showToast("开启权限后，请完全退出并重新启动应用");
+});
 
 function searchableText(prompt) {
   return [prompt.title, ...(prompt.keywords ?? []), ...(prompt.tags ?? []), ...(prompt.aliases ?? [])]

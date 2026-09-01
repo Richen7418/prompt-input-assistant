@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>快速新增提示词</title>
+  <link rel="stylesheet" href="quick-add.css">
+</head>
+<body>
+  <main class="quick-add-shell">
+    <header>
+      <div>
+        <p class="eyebrow">QUICK ADD</p>
+        <h1>快速新增提示词</h1>
+        <p id="target-name" class="target-name"></p>
+      </div>
+      <button id="close-button" class="icon-button" type="button" aria-label="关闭">×</button>
+    </header>
+
+    <form id="quick-add-form">
+      <label>标题 <span>*</span>
+        <input id="title-input" type="text" maxlength="100" required autocomplete="off">
+      </label>
+      <label class="content-field">提示词内容 <span>*</span>
+        <textarea id="content-input" maxlength="20000" required></textarea>
+      </label>
+      <div class="form-grid">
+        <label>中文关键词
+          <input id="keywords-input" type="text" maxlength="500" placeholder="润色，邮件">
+        </label>
+        <label>标签
+          <input id="tags-input" type="text" maxlength="500" placeholder="工作，常用">
+        </label>
+      </div>
+      <label>英文别名
+        <input id="aliases-input" type="text" maxlength="500" placeholder="polish, email">
+      </label>
+      <p id="notice" class="notice" aria-live="polite"></p>
+      <footer>
+        <span>Esc 取消 · ⌘/Ctrl + Enter 保存</span>
+        <div class="actions">
+          <button id="cancel-button" class="secondary-button" type="button">取消</button>
+          <button id="save-button" class="primary-button" type="submit">保存</button>
+        </div>
+      </footer>
+    </form>
+  </main>
+  <script src="quick-add.js"></script>
+</body>
+</html>

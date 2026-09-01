@@ -217,7 +217,7 @@ async function pasteMac(target) {
     tell application "System Events"
       set targetProcess to first application process whose unix id is ${processId}
       set frontmost of targetProcess to true
-      delay 0.08
+      delay 0.2
       keystroke "v" using command down
     end tell
   `);
@@ -234,7 +234,7 @@ async function copyMac(target) {
     tell application "System Events"
       set targetProcess to first application process whose unix id is ${processId}
       set frontmost of targetProcess to true
-      delay 0.08
+      delay 0.2
       keystroke "c" using command down
     end tell
   `);
