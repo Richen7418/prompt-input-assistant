@@ -33,7 +33,7 @@ for (const file of requiredFiles) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-assert.equal(packageJson.version, "0.1.7");
+assert.equal(packageJson.version, "1.0.0");
 assert.equal(packageJson.main, "src/main/main.js");
 assert.equal(packageJson.build.appId, "local.prompt.inputassistant");
 assert.equal(packageJson.build.afterPack, "scripts/after-pack.js");
@@ -52,8 +52,10 @@ assert.match(mainSource, /process\.platform === "darwin" \? \{ type: "panel" \}/
   "macOS 候选窗必须使用不切换 Space 的 panel 类型");
 assert.match(mainSource, /setMacActivationPolicy\("accessory"\)/u,
   "macOS 候选窗必须使用 accessory 激活策略");
-assert.match(mainSource, /setAlwaysOnTop\(true, "screen-saver"\)/u,
-  "macOS 候选窗必须使用全屏浮动层级");
+assert.match(mainSource, /const MAC_OVERLAY_WINDOW_LEVEL = "floating"/u,
+  "macOS 候选窗必须使用不会覆盖输入法候选框的浮动层级");
+assert.doesNotMatch(mainSource, /window\.setAlwaysOnTop\(true, "screen-saver"\)/u,
+  "macOS 候选窗不应覆盖输入法候选框");
 assert.match(mainSource, /skipTransformProcessType:\s*true/u,
   "macOS 候选窗不应改变管理窗口的进程显示策略");
 assert.match(mainSource, /isTrustedAccessibilityClient\(true\)/u,

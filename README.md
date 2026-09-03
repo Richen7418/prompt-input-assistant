@@ -1,4 +1,4 @@
-# 🚀 中文提示词输入助手 V0.1.7
+# 🚀 中文提示词输入助手 V1.0.0
 
 > **以前上网靠拨号，现在提示靠分号。**
 
@@ -68,7 +68,7 @@
 3. 继续输入文字搜索提示词；输入两个分号 `;;` 可以只按标签检索。
 4. 使用 `↑` / `↓` 选择，按 `Tab` 插入；滚动鼠标滚轮可查看其余候选项。
 5. 选择完成后按空格或 `Esc` 关闭候选框，焦点会回到原输入框。
-6. 想保存看到的文字时，先选中文字，再按 Windows 的 `Ctrl + ;` 或 macOS 的 `Command + ;`；应用会打开完整新增表单，并把选区预填到提示词正文。
+6. 想保存看到的文字时，先选中文字，再按 `Ctrl + ;`（macOS 也兼容 `Command + ;`）；应用会打开完整新增表单，并把选区预填到提示词正文。
 
 <p align="center">
   <img src="assets/screenshots/prompt-manager.png" alt="提示词管理、搜索和候选框设置界面" width="900">
@@ -78,11 +78,17 @@
 
 ## 下载
 
-- [下载 macOS Intel x64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.7/prompt-input-assistant-0.1.7-mac-x64.dmg)
-- [下载 macOS Apple Silicon arm64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.7/prompt-input-assistant-0.1.7-mac-arm64.dmg)
+- [下载 macOS Intel x64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v1.0.0/prompt-input-assistant-1.0.0-mac-x64.dmg)
+- [下载 macOS Apple Silicon arm64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v1.0.0/prompt-input-assistant-1.0.0-mac-arm64.dmg)
 - [下载 Windows x64 安装包（v0.1.5）](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.5/prompt-input-assistant-0.1.5-win-x64.exe)
 - macOS 安装包带有 ad-hoc 本地签名，但没有 Apple Developer ID 签名或公证。首次打开时，请在 Finder 中右键点击应用并选择“打开”，然后再次确认；首次安装或更新后请重新授予一次辅助功能权限。
 - Windows 安装包尚未进行商业代码签名，首次运行时可能出现 SmartScreen 提示。
+
+## V1.0.0 修复
+
+- 项目开始使用 `1.0.x` 稳定版本号。
+- macOS 候选窗和快速新增窗改用较低的浮动面板层级，不再遮住中文输入法候选窗，可正常输入拼音并选择候选词。
+- 保留候选窗跨 Space、覆盖全屏输入应用以及管理主窗口仅停留在普通桌面的行为。
 
 ## V0.1.7 修复
 

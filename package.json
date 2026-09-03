@@ -1,7 +1,7 @@
 {
   "name": "prompt-input-assistant",
   "productName": "中文提示词输入助手",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "description": "适用于 Windows 与 macOS 的本地提示词桌面输入助手",
   "author": "本地个人项目",
   "private": true,

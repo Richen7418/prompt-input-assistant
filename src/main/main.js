@@ -50,6 +50,7 @@ const QUICK_ADD_CONTENT_LIMIT = 20000;
 const PREDICTION_ESCAPE = "Escape";
 const PREDICTION_SPACE = "Space";
 const MAC_ACCESSIBILITY_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+const MAC_OVERLAY_WINDOW_LEVEL = "floating";
 
 let store;
 let learningStore;
@@ -328,7 +329,9 @@ function configureMacFloatingWindow(window) {
     visibleOnFullScreen: true,
     skipTransformProcessType: true
   });
-  window.setAlwaysOnTop(true, "screen-saver");
+  // Keep the assistant above full-screen app windows without covering the
+  // higher-level candidate panels owned by macOS input methods.
+  window.setAlwaysOnTop(true, MAC_OVERLAY_WINDOW_LEVEL);
 }
 
 function unregisterTriggerShortcuts() {
@@ -843,7 +846,9 @@ function createQuickAddWindow() {
       sandbox: true
     }
   });
-  quickAddWindow.setAlwaysOnTop(true, "pop-up-menu");
+  if (process.platform !== "darwin") {
+    quickAddWindow.setAlwaysOnTop(true, "pop-up-menu");
+  }
   quickAddWindow.loadFile(getRendererPath("quick-add.html"));
   quickAddWindow.on("focus", unregisterTriggerShortcuts);
   quickAddWindow.on("hide", () => setTimeout(registerTriggerShortcuts, 80));
@@ -879,7 +884,9 @@ function createPopupWindow() {
       sandbox: true
     }
   });
-  popupWindow.setAlwaysOnTop(true, "pop-up-menu");
+  if (process.platform !== "darwin") {
+    popupWindow.setAlwaysOnTop(true, "pop-up-menu");
+  }
   popupWindow.loadFile(getRendererPath("popup.html"));
   popupWindow.webContents.on("did-finish-load", () => {
     popupReady = true;
