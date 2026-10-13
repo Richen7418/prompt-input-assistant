@@ -56,6 +56,7 @@ function filterPrompts(prompts, {
   mode = "prompt",
   query = "",
   limit = 3,
+  selectedTitles = [],
   learning = null,
   previousSelection = null,
   now = Date.now()
@@ -63,8 +64,14 @@ function filterPrompts(prompts, {
   if (!Array.isArray(prompts)) return [];
 
   const normalizedQuery = normalizeSearch(query);
+  const normalizedTitles = new Set(
+    (Array.isArray(selectedTitles) ? selectedTitles : [])
+      .map(normalizeSearch)
+      .filter(Boolean)
+  );
   const matches = prompts.filter((prompt) => {
     if (!prompt || typeof prompt !== "object") return false;
+    if (normalizedTitles.size > 0 && !normalizedTitles.has(normalizeSearch(prompt.title))) return false;
     const tags = Array.isArray(prompt.tags) ? prompt.tags : [];
     if (mode === "tag") {
       return tags.length > 0

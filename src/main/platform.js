@@ -7,6 +7,7 @@ const { promisify } = require("node:util");
 const { app } = require("electron");
 
 const execFileAsync = promisify(execFile);
+const MAC_TARGET_SEPARATOR = String.fromCharCode(30);
 let windowsBridge = null;
 let windowsBridgeReady = null;
 let resolveWindowsBridgeReady = null;
@@ -197,13 +198,87 @@ async function captureMacTarget() {
   const output = await runAppleScript(`
     tell application "System Events"
       set targetProcess to first application process whose frontmost is true
-      return (unix id of targetProcess as text) & "|" & (name of targetProcess as text)
+      set pidText to unix id of targetProcess as text
+      set processName to name of targetProcess as text
+      set windowTitle to ""
+      set wx to 0
+      set wy to 0
+      set ww to 0
+      set wh to 0
+      try
+        set targetWindow to front window of targetProcess
+        set windowTitle to name of targetWindow as text
+        set {wx, wy} to position of targetWindow
+        set {ww, wh} to size of targetWindow
+      end try
+
+      set inputKnown to false
+      set inputFocused to false
+      set inputRole to ""
+      set ix to 0
+      set iy to 0
+      set iw to 0
+      set ih to 0
+      try
+        set focusedElement to value of attribute "AXFocusedUIElement" of targetProcess
+        set inputKnown to true
+        set inputRole to value of attribute "AXRole" of focusedElement as text
+        set isEditable to false
+        try
+          set isEditable to value of attribute "AXEditable" of focusedElement as boolean
+        end try
+        if isEditable or inputRole is "AXTextField" or inputRole is "AXTextArea" or inputRole is "AXComboBox" then
+          set inputFocused to true
+        end if
+        try
+          set {ix, iy} to position of focusedElement
+          set {iw, ih} to size of focusedElement
+        end try
+      end try
+
+      set fieldSeparator to ASCII character 30
+      return pidText & fieldSeparator & processName & fieldSeparator & windowTitle & fieldSeparator & wx & fieldSeparator & wy & fieldSeparator & ww & fieldSeparator & wh & fieldSeparator & inputKnown & fieldSeparator & inputFocused & fieldSeparator & inputRole & fieldSeparator & ix & fieldSeparator & iy & fieldSeparator & iw & fieldSeparator & ih
     end tell
   `);
-  const separator = output.indexOf("|");
+  const [
+    pidText,
+    processName,
+    windowTitle,
+    wx,
+    wy,
+    ww,
+    wh,
+    inputKnown,
+    inputFocused,
+    inputRole,
+    ix,
+    iy,
+    iw,
+    ih
+  ] = output.split(MAC_TARGET_SEPARATOR);
+  const windowBounds = {
+    x: Number.parseFloat(wx) || 0,
+    y: Number.parseFloat(wy) || 0,
+    width: Number.parseFloat(ww) || 0,
+    height: Number.parseFloat(wh) || 0
+  };
+  const inputBounds = {
+    x: Number.parseFloat(ix) || 0,
+    y: Number.parseFloat(iy) || 0,
+    width: Number.parseFloat(iw) || 0,
+    height: Number.parseFloat(ih) || 0
+  };
+  const hasInputBounds = inputBounds.width > 0 && inputBounds.height > 0;
   return {
-    processId: Number.parseInt(output.slice(0, separator), 10),
-    processName: output.slice(separator + 1)
+    processId: Number.parseInt(pidText, 10),
+    processName,
+    windowTitle,
+    windowBounds,
+    inputBounds,
+    bounds: inputFocused === "true" && hasInputBounds ? inputBounds : windowBounds,
+    inputKnown: inputKnown === "true",
+    inputFocused: inputFocused === "true",
+    inputRole
   };
 }
 

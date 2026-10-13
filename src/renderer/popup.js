@@ -4,6 +4,7 @@ const elements = {
   modeBadge: document.querySelector("#mode-badge"),
   targetName: document.querySelector("#target-name"),
   resultCount: document.querySelector("#result-count"),
+  titleFilterList: document.querySelector("#title-filter-list"),
   queryPrefix: document.querySelector("#query-prefix"),
   queryInput: document.querySelector("#query-input"),
   candidateList: document.querySelector("#candidate-list")
@@ -20,6 +21,7 @@ let isComposing = false;
 let submitting = false;
 let pendingCloseRequest = null;
 let focusRequestPending = false;
+const selectedTitles = new Set();
 
 function rawText(extra = "") {
   return `${mode === "tag" ? ";;" : ";"}${elements.queryInput.value}${extra}`;
@@ -34,8 +36,74 @@ function matches() {
     mode,
     query: elements.queryInput.value,
     limit: prompts.length,
+    selectedTitles: [...selectedTitles],
     learning,
     previousSelection
+  });
+}
+
+function availableTitles() {
+  const titles = [];
+  const seen = new Set();
+  for (const prompt of prompts) {
+    const title = String(prompt?.title ?? "").trim();
+    const key = window.PromptSearch.normalizeSearch(title);
+    if (!title || seen.has(key)) continue;
+    seen.add(key);
+    titles.push(title);
+  }
+  return titles;
+}
+
+function pruneSelectedTitles() {
+  const available = new Set(availableTitles().map(window.PromptSearch.normalizeSearch));
+  for (const title of selectedTitles) {
+    if (!available.has(window.PromptSearch.normalizeSearch(title))) selectedTitles.delete(title);
+  }
+}
+
+function renderTitleFilters() {
+  const previousScrollLeft = elements.titleFilterList.scrollLeft;
+  const titles = availableTitles();
+  const ordered = [
+    ...[...selectedTitles].filter((title) => titles.includes(title)),
+    ...titles.filter((title) => !selectedTitles.has(title))
+  ];
+  elements.titleFilterList.replaceChildren();
+
+  for (const title of ordered) {
+    const active = selectedTitles.has(title);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `title-filter-chip${active ? " active" : ""}`;
+    chip.title = active ? `${title}（点击右上角 × 取消）` : `筛选：${title}`;
+    chip.textContent = title;
+    chip.setAttribute("aria-pressed", String(active));
+    if (active) {
+      chip.setAttribute("aria-label", `${title}，已选中；点击右上角叉取消`);
+      const remove = document.createElement("span");
+      remove.className = "title-filter-remove";
+      remove.dataset.action = "remove";
+      remove.setAttribute("aria-hidden", "true");
+      remove.textContent = "×";
+      chip.append(remove);
+    }
+    chip.addEventListener("click", (event) => {
+      if (active) {
+        if (!(event.target instanceof Element) || !event.target.closest("[data-action='remove']")) return;
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      selectedIndex = 0;
+      render();
+      focusQueryInput();
+    });
+    elements.titleFilterList.append(chip);
+  }
+
+  requestAnimationFrame(() => {
+    elements.titleFilterList.scrollLeft = selectedTitles.size > 0 ? 0 : previousScrollLeft;
   });
 }
 
@@ -158,6 +226,7 @@ function requestPopupKeyboardFocus() {
 
 function render() {
   const candidates = matches();
+  renderTitleFilters();
   elements.candidateList.classList.remove("keyboard-navigation");
   if (selectedIndex >= candidates.length) selectedIndex = Math.max(0, candidates.length - 1);
   elements.modeBadge.textContent = previousSelection ? "预测下一条" : (mode === "tag" ? "标签检索" : "提示词检索");
@@ -239,9 +308,15 @@ window.addEventListener("focus", () => {
 });
 elements.candidateList.addEventListener("pointermove", requestPopupKeyboardFocus);
 elements.candidateList.addEventListener("pointerdown", requestPopupKeyboardFocus);
+elements.titleFilterList.addEventListener("wheel", (event) => {
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  elements.titleFilterList.scrollLeft += event.deltaY;
+  event.preventDefault();
+}, { passive: false });
 
 window.promptAssistant.onPopupOpen((payload) => {
   prompts = Array.isArray(payload.prompts) ? payload.prompts : [];
+  pruneSelectedTitles();
   learning = payload.learning ?? { promptStats: [], transitions: [] };
   settings = { ...settings, ...payload.settings };
   mode = payload.mode === "tag" ? "tag" : "prompt";
@@ -259,8 +334,13 @@ window.promptAssistant.onPopupOpen((payload) => {
   requestAnimationFrame(focusQueryInput);
 });
 
+window.promptAssistant.onPopupTarget((payload) => {
+  elements.targetName.textContent = payload?.targetName ? `插入到 ${payload.targetName}` : "";
+});
+
 window.promptAssistant.onLibraryChanged((payload) => {
   if (payload?.library?.prompts) prompts = payload.library.prompts;
+  pruneSelectedTitles();
   if (payload?.library?.settings) settings = { ...settings, ...payload.library.settings };
   if (payload?.learning) learning = payload.learning;
   if (payload && Object.hasOwn(payload, "previousSelection")) {

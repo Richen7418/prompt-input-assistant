@@ -26,5 +26,6 @@ contextBridge.exposeInMainWorld("promptAssistant", Object.freeze({
   onLibraryChanged: (callback) => subscribe("library:changed", callback),
   onQuickAdd: (callback) => subscribe("quick-add:open", callback),
   onPopupOpen: (callback) => subscribe("popup:open", callback),
+  onPopupTarget: (callback) => subscribe("popup:target", callback),
   onManagerNotice: (callback) => subscribe("manager:notice", callback)
 }));

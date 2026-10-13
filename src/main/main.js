@@ -73,6 +73,8 @@ let insertingPrompt = false;
 let closeAfterInsert = false;
 let predictionCloseStatus = { escape: false, space: false };
 let accessibilitySettingsOpened = false;
+let popupBindingTimer = null;
+let popupFocusCheckSequence = 0;
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -117,7 +119,8 @@ function rendererHealth(window) {
     promptAssistant: typeof window.promptAssistant === "object",
     focusPopup: typeof window.promptAssistant?.focusPopup === "function",
     promptLearning: typeof window.PromptLearning === "object",
-    promptSearch: typeof window.PromptSearch === "object"
+    promptSearch: typeof window.PromptSearch === "object",
+    titleFilterList: Boolean(document.querySelector("#title-filter-list"))
   }))()`);
 }
 
@@ -271,6 +274,62 @@ async function verifyPopupKeyboardNavigation() {
   }
 }
 
+async function verifyPopupTitleFilters() {
+  const library = store.snapshot();
+  const titles = [...new Set(library.prompts.map((prompt) => prompt.title))];
+  if (titles.length < 2) throw new Error("Popup title filter smoke test requires two titles");
+  currentTarget = { processName: "SmokeTestTarget" };
+  previousSelection = null;
+  await focusPopupWindow();
+  await sendSmokePopupOpen({
+    prompts: library.prompts,
+    settings: library.settings,
+    learning: learningStore.viewFor(null),
+    previousSelection: null,
+    mode: "prompt"
+  });
+
+  const selection = await popupWindow.webContents.executeJavaScript(`(() => {
+    const selectTitle = (title) => Array.from(document.querySelectorAll(".title-filter-chip"))
+      .find((chip) => chip.textContent.replace("×", "").trim() === title)?.click();
+    selectTitle(${JSON.stringify(titles[0])});
+    selectTitle(${JSON.stringify(titles[1])});
+    return {
+      activeCount: document.querySelectorAll(".title-filter-chip.active").length,
+      candidateTitles: Array.from(document.querySelectorAll(".candidate-title")).map((item) => item.textContent)
+    };
+  })()`);
+  if (selection.activeCount !== 2
+    || selection.candidateTitles.some((title) => title !== titles[0] && title !== titles[1])) {
+    throw new Error(`Popup title union filter failed: ${JSON.stringify(selection)}`);
+  }
+
+  closePopupWindow();
+  currentTarget = { processName: "SmokeTestTarget" };
+  await focusPopupWindow();
+  await sendSmokePopupOpen({
+    prompts: library.prompts,
+    settings: library.settings,
+    learning: learningStore.viewFor(null),
+    previousSelection: null,
+    mode: "prompt"
+  });
+  const persisted = await popupWindow.webContents.executeJavaScript(`(() => ({
+    activeCount: document.querySelectorAll(".title-filter-chip.active").length,
+    hasRemoveControl: Boolean(document.querySelector(".title-filter-chip.active .title-filter-remove"))
+  }))()`);
+  if (persisted.activeCount !== 2 || !persisted.hasRemoveControl) {
+    throw new Error(`Popup title filters did not persist across reopen: ${JSON.stringify(persisted)}`);
+  }
+
+  await popupWindow.webContents.executeJavaScript(`(() => {
+    while (document.querySelector(".title-filter-chip.active .title-filter-remove")) {
+      document.querySelector(".title-filter-chip.active .title-filter-remove").click();
+    }
+  })()`);
+  closePopupWindow();
+}
+
 async function verifyQuickAddForm() {
   const content = "快速收录测试正文\n第二行";
   quickAddTarget = { processName: "SmokeTestTarget" };
@@ -313,7 +372,13 @@ function getRendererPath(fileName) {
 
 function focusedAssistantWindow() {
   const focused = BrowserWindow.getFocusedWindow();
-  return focused === managerWindow || focused === popupWindow || focused === quickAddWindow;
+  return focused === popupWindow || focused === quickAddWindow;
+}
+
+function insertSemicolonIntoManager() {
+  if (!managerWindow || managerWindow.isDestroyed() || !managerWindow.isFocused()) return false;
+  void managerWindow.webContents.insertText(";");
+  return true;
 }
 
 function setMacActivationPolicy(policy) {
@@ -332,6 +397,23 @@ function configureMacFloatingWindow(window) {
   // Keep the assistant above full-screen app windows without covering the
   // higher-level candidate panels owned by macOS input methods.
   window.setAlwaysOnTop(true, MAC_OVERLAY_WINDOW_LEVEL);
+}
+
+function stopPopupBindingMonitor() {
+  if (popupBindingTimer) clearTimeout(popupBindingTimer);
+  popupBindingTimer = null;
+}
+
+function schedulePopupBindingMonitor() {
+  stopPopupBindingMonitor();
+  if (process.platform !== "darwin" || !popupWindow?.isVisible()) return;
+  popupBindingTimer = setTimeout(() => {
+    popupBindingTimer = null;
+    if (!popupWindow || popupWindow.isDestroyed() || !popupWindow.isVisible()) return;
+    configureMacFloatingWindow(popupWindow);
+    popupWindow.moveTop();
+    schedulePopupBindingMonitor();
+  }, 1200);
 }
 
 function unregisterTriggerShortcuts() {
@@ -425,7 +507,10 @@ function registerTriggerShortcuts() {
   }
 
   try {
-    triggerStatus.search = globalShortcut.register(SEARCH_TRIGGER, () => openPopup("prompt"));
+    triggerStatus.search = globalShortcut.register(SEARCH_TRIGGER, () => {
+      if (insertSemicolonIntoManager()) return;
+      void openPopup("prompt");
+    });
   } catch (error) {
     console.warn("分号快捷键注册失败：", error.message);
   }
@@ -504,11 +589,6 @@ function showShortNotification(message) {
 
 async function startQuickAdd() {
   if (quickAddInProgress || openingPopup || currentTarget) return false;
-  if (!macAccessibilityTrusted(false)) {
-    showShortNotification("请先为中文提示词输入助手开启辅助功能权限");
-    void openMacAccessibilitySettings();
-    return false;
-  }
   quickAddInProgress = true;
   unregisterTriggerShortcuts();
 
@@ -550,7 +630,7 @@ async function startQuickAdd() {
 function popupBounds() {
   const settings = store.snapshot().settings;
   const width = 520;
-  const height = Math.min(680, Math.max(280, 150 + settings.resultLimit * 96));
+  const height = Math.min(720, Math.max(324, 194 + settings.resultLimit * 96));
   const targetBounds = currentTarget?.bounds;
   const anchor = targetBounds && targetBounds.width > 0 && targetBounds.height > 0
     ? {
@@ -563,8 +643,14 @@ function popupBounds() {
   const desiredX = targetBounds?.width > 0
     ? targetBounds.x + (targetBounds.width - width) / 2
     : workArea.x + (workArea.width - width) / 2;
+  const inputTop = targetBounds?.y ?? 0;
+  const inputBottom = inputTop + (targetBounds?.height ?? 0);
+  const spaceAbove = inputTop - workArea.y;
+  const spaceBelow = workArea.y + workArea.height - inputBottom;
   const desiredY = targetBounds?.height > 0
-    ? targetBounds.y + targetBounds.height - height - 110
+    ? (spaceAbove >= height + 12 || spaceAbove >= spaceBelow
+        ? inputTop - height - 10
+        : inputBottom + 10)
     : workArea.y + workArea.height - height - 100;
   return {
     x: Math.round(Math.min(Math.max(desiredX, workArea.x + 10), workArea.x + workArea.width - width - 10)),
@@ -620,6 +706,7 @@ async function focusPopupWindow() {
   popupWindow.show();
   if (process.platform === "darwin") popupWindow.moveTop();
   popupWindow.focus();
+  schedulePopupBindingMonitor();
   if (process.platform !== "win32") return true;
   await delay(40);
   const target = nativeWindowTarget(popupWindow);
@@ -631,13 +718,71 @@ async function focusPopupWindow() {
   return activated;
 }
 
+function sendPopupTargetName() {
+  if (!popupWindow || popupWindow.isDestroyed()) return;
+  popupWindow.webContents.send("popup:target", {
+    targetName: currentTarget?.processName ?? "当前应用"
+  });
+}
+
+async function handlePopupFocusLoss() {
+  if (isFullSmokeTest) {
+    syncPredictionCloseShortcuts();
+    return;
+  }
+  const sequence = ++popupFocusCheckSequence;
+  await delay(90);
+  syncPredictionCloseShortcuts();
+  if (sequence !== popupFocusCheckSequence
+    || closingPopup
+    || insertingPrompt
+    || !popupWindow
+    || popupWindow.isDestroyed()
+    || !popupWindow.isVisible()
+    || popupWindow.isFocused()) return;
+
+  const observedTarget = await captureTarget();
+  if (sequence !== popupFocusCheckSequence || closingPopup || !popupWindow.isVisible()) return;
+  if (Number.parseInt(observedTarget?.processId, 10) === process.pid) return;
+  if (observedTarget?.inputKnown !== true || observedTarget.inputFocused === true) {
+    currentTarget = observedTarget;
+    popupWindow.setBounds(popupBounds(), false);
+    sendPopupTargetName();
+  }
+  await focusPopupWindow();
+}
+
+function handleAppActivate() {
+  if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
+    configureMacFloatingWindow(popupWindow);
+    popupWindow.moveTop();
+    popupWindow.focus();
+    schedulePopupBindingMonitor();
+    return;
+  }
+  if (quickAddWindow && !quickAddWindow.isDestroyed() && quickAddWindow.isVisible()) {
+    configureMacFloatingWindow(quickAddWindow);
+    quickAddWindow.moveTop();
+    quickAddWindow.focus();
+    return;
+  }
+  showManager();
+}
+
 async function openPopup(mode) {
   if (openingPopup) {
     pendingMode = "tag";
     return;
   }
   if (popupWindow?.isVisible()) {
-    popupWindow.focus();
+    const refreshedTarget = await captureTarget();
+    if (Number.parseInt(refreshedTarget?.processId, 10) !== process.pid
+      && (refreshedTarget?.inputKnown !== true || refreshedTarget.inputFocused === true)) {
+      currentTarget = refreshedTarget;
+      popupWindow.setBounds(popupBounds(), false);
+      sendPopupTargetName();
+    }
+    await focusPopupWindow();
     return;
   }
 
@@ -674,6 +819,8 @@ async function openPopup(mode) {
 }
 
 function closePopupWindow() {
+  popupFocusCheckSequence += 1;
+  stopPopupBindingMonitor();
   unregisterPredictionCloseShortcuts();
   closeAfterInsert = false;
   closingPopup = true;
@@ -709,19 +856,15 @@ async function pasteTextIntoTarget(text) {
   popupWindow.hide();
   await delay(140);
 
-  const missingAccessibility = !isFullSmokeTest && !macAccessibilityTrusted(false);
-  const pasted = missingAccessibility ? false : await activateAndPaste(currentTarget);
+  const pasted = await activateAndPaste(currentTarget);
   if (pasted) {
     await delay(450);
     restoreClipboard(clipboard, clipboardSnapshot);
   } else {
     new Notification({
       title: "中文提示词输入助手",
-      body: missingAccessibility
-        ? "缺少辅助功能权限，内容已保留在剪贴板；请授权后重试。"
-        : "自动粘贴失败，提示词已保留在剪贴板，请手动粘贴。"
+      body: "自动粘贴失败，内容已保留在剪贴板，请手动粘贴；可在管理页检查权限。"
     }).show();
-    if (missingAccessibility) void openMacAccessibilitySettings();
   }
 
   return { attempted: true, inserted: pasted, clipboardFallback: !pasted };
@@ -810,8 +953,8 @@ function createManagerWindow() {
   managerWindow.once("ready-to-show", () => {
     if (!isFullSmokeTest) showManager();
   });
-  managerWindow.on("focus", unregisterTriggerShortcuts);
-  managerWindow.on("blur", () => setTimeout(registerTriggerShortcuts, 80));
+  managerWindow.on("focus", registerTriggerShortcuts);
+  managerWindow.on("blur", registerTriggerShortcuts);
   managerWindow.on("close", (event) => {
     if (!quitting) {
       event.preventDefault();
@@ -893,8 +1036,11 @@ function createPopupWindow() {
     registerTriggerShortcuts();
   });
   popupWindow.on("focus", unregisterPredictionCloseShortcuts);
-  popupWindow.on("blur", () => setTimeout(syncPredictionCloseShortcuts, 0));
-  popupWindow.on("hide", unregisterPredictionCloseShortcuts);
+  popupWindow.on("blur", () => { void handlePopupFocusLoss(); });
+  popupWindow.on("hide", () => {
+    stopPopupBindingMonitor();
+    unregisterPredictionCloseShortcuts();
+  });
 }
 
 function trayImage() {
@@ -1103,19 +1249,24 @@ async function initialize() {
   createTray();
 
   if (process.platform === "darwin" && !isFullSmokeTest) {
-    setTimeout(() => {
-      if (macAccessibilityTrusted(false)) return;
-      systemPreferences.isTrustedAccessibilityClient(true);
-      managerNotice("请开启辅助功能权限，否则无法快速收录或把提示词、分号写回输入框。", "warning");
-      broadcastStatus();
-    }, 700);
+    let lastTrusted = macAccessibilityTrusted(false);
+    const permissionMonitor = setInterval(() => {
+      const trusted = macAccessibilityTrusted(false);
+      if (trusted === lastTrusted) return;
+      lastTrusted = trusted;
+      accessibilitySettingsOpened = false;
+      registerTriggerShortcuts();
+    }, 1500);
+    permissionMonitor.unref();
+    app.once("will-quit", () => clearInterval(permissionMonitor));
   }
 
-  app.on("activate", showManager);
+  app.on("activate", handleAppActivate);
   app.on("before-quit", () => { quitting = true; });
   app.on("will-quit", () => {
     unregisterPredictionCloseShortcuts();
     unregisterTriggerShortcuts();
+    stopPopupBindingMonitor();
     shutdownPlatformBridge();
   });
 
@@ -1132,7 +1283,7 @@ async function initialize() {
     ]);
     if (!managerHealth.promptAssistant || !managerHealth.focusPopup
       || !managerHealth.promptLearning || !managerHealth.promptSearch
-      || !popupHealth.promptAssistant || !popupHealth.focusPopup
+      || !popupHealth.promptAssistant || !popupHealth.focusPopup || !popupHealth.titleFilterList
       || !popupHealth.promptLearning || !popupHealth.promptSearch
       || !quickAddHealth.promptAssistant || !quickAddHealth.titleInput || !quickAddHealth.contentInput) {
       throw new Error(`Renderer initialization failed: ${JSON.stringify({
@@ -1147,6 +1298,7 @@ async function initialize() {
     await verifyPopupCloseShortcut(" ", "Space");
     await verifyPopupCompositionSafety();
     await verifyPopupKeyboardNavigation();
+    await verifyPopupTitleFilters();
     const globalCloseKeys = registerPredictionCloseShortcuts();
     if (!globalCloseKeys.escape || !globalCloseKeys.space) {
       throw new Error(`Prediction global close shortcuts failed: ${JSON.stringify(globalCloseKeys)}`);
@@ -1181,6 +1333,7 @@ async function initialize() {
       predictionCloseKeys: true,
       compositionCloseSafety: true,
       candidateKeyboardScope: true,
+      persistentTitleUnionFilters: true,
       scrollableResults: true,
       predictionGlobalCloseKeys: true,
       fullScreenWorkspaceOverlay,

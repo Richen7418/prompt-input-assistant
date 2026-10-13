@@ -69,6 +69,24 @@ test("双分号模式只搜索标签", () => {
   assert.deepEqual(filterPrompts(prompts, { mode: "tag", query: "翻译", limit: 3 }), []);
 });
 
+test("标题标签支持多选并显示所选标题的并集", () => {
+  const alternatePolish = normalizePrompt({
+    id: "polish-short",
+    title: "中文邮件润色",
+    content: "简短润色邮件",
+    updatedAt: "2026-08-06T12:00:00.000Z"
+  });
+  const source = [...prompts, alternatePolish];
+  assert.deepEqual(
+    filterPrompts(source, { selectedTitles: ["中文邮件润色"], limit: 10 }).map((item) => item.id),
+    ["polish-short", "polish"]
+  );
+  assert.deepEqual(
+    filterPrompts(source, { selectedTitles: ["中文邮件润色", "中英翻译"], limit: 10 }).map((item) => item.id),
+    ["polish-short", "translate", "polish"]
+  );
+});
+
 test("没有学习数据时按更新时间排序并限制条数", () => {
   assert.deepEqual(filterPrompts(prompts, { limit: 1 }).map((item) => item.id), ["translate"]);
 });

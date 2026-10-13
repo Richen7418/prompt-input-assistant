@@ -79,7 +79,7 @@ function updateStatus() {
 
 elements.accessibilityButton.addEventListener("click", async () => {
   await window.promptAssistant.openAccessibilitySettings();
-  showToast("开启权限后，请完全退出并重新启动应用");
+  showToast("开启权限后会自动刷新状态；若仍未生效，请退出并重新启动应用");
 });
 
 function searchableText(prompt) {

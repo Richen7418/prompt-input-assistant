@@ -50,13 +50,13 @@ function normalizePrompt(raw, { requireId = false } = {}) {
   const content = typeof raw.content === "string" ? raw.content : "";
 
   if (!title) {
-    throw new Error("提示词标题不能为空");
+    throw new Error("提示词标题标签不能为空");
   }
   if (!content.trim()) {
     throw new Error(`“${title}”的提示词内容不能为空`);
   }
   if (title.length > 100) {
-    throw new Error(`“${title.slice(0, 20)}…”的标题超过 100 个字符`);
+    throw new Error(`“${title.slice(0, 20)}…”的标题标签超过 100 个字符`);
   }
   if (content.length > 20000) {
     throw new Error(`“${title}”的内容超过 20000 个字符`);

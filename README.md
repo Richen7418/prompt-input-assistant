@@ -1,4 +1,4 @@
-# 🚀 中文提示词输入助手 V1.0.0
+# 🚀 中文提示词输入助手 V1.0.1
 
 > **以前上网靠拨号，现在提示靠分号。**
 
@@ -78,11 +78,19 @@
 
 ## 下载
 
-- [下载 macOS Intel x64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v1.0.0/prompt-input-assistant-1.0.0-mac-x64.dmg)
-- [下载 macOS Apple Silicon arm64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v1.0.0/prompt-input-assistant-1.0.0-mac-arm64.dmg)
+- [下载 macOS Intel x64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v1.0.1/prompt-input-assistant-1.0.1-mac-x64.dmg)
+- [下载 macOS Apple Silicon arm64 安装包](https://github.com/Richen7418/prompt-input-assistant/releases/download/v1.0.1/prompt-input-assistant-1.0.1-mac-arm64.dmg)
 - [下载 Windows x64 安装包（v0.1.5）](https://github.com/Richen7418/prompt-input-assistant/releases/download/v0.1.5/prompt-input-assistant-0.1.5-win-x64.exe)
 - macOS 安装包带有 ad-hoc 本地签名，但没有 Apple Developer ID 签名或公证。首次打开时，请在 Finder 中右键点击应用并选择“打开”，然后再次确认；首次安装或更新后请重新授予一次辅助功能权限。
 - Windows 安装包尚未进行商业代码签名，首次运行时可能出现 SmartScreen 提示。
+
+## V1.0.1 更新
+
+- 候选窗新增横向“标题标签”栏，可同时选择多个标题标签并显示对应 Prompt 的并集；选中状态在候选窗关闭后继续保留，只有点击右上角叉才会取消，应用重启后清空。
+- 原有“标题”在界面中改称“标题标签”，既有内容不迁移、不丢失；原有“标签”改称“检索标签”。
+- macOS 浮窗改为读取真实焦点输入控件的位置，并修复应用激活时偶尔跳回普通桌面的问题。
+- 标签栏隐藏滚动条，保留左右滑动与滚轮浏览；修复管理窗口焦点导致快捷键注销的问题。
+- 辅助功能授权状态自动刷新，取消启动和操作时反复弹出授权设置。更新后若已开启仍显示未授权，请退出应用，在辅助功能列表中删除旧记录，重新添加应用并开启权限。
 
 ## V1.0.0 修复
 
@@ -232,7 +240,7 @@ macOS 会限制应用恢复其他程序焦点和模拟粘贴。第一次使用�
 1. 打开“系统设置（或系统偏好设置）→ 隐私与安全性 → 辅助功能”。
 2. 允许“中文提示词输入助手”；运行开发版时，也可能需要允许启动它的 Terminal。
 3. 如果系统询问是否允许控制“System Events”，请选择允许。
-4. 授权后完全退出并重新启动应用。
+4. 授权状态会自动刷新；若仍未生效，请完全退出并重新启动应用。更新后旧的临时签名授权记录可能失效，此时删除旧记录并重新添加当前应用。
 
 应用会在运行状态区域检测该权限；未授权时可点击“打开辅助功能设置”。缺少权限时，提示词或普通分号会保留在剪贴板，但 macOS 不允许应用自动写回目标输入框。
 
